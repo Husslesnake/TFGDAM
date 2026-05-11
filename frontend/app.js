@@ -3,9 +3,9 @@
 // Autores: Adrián Bravo Santos y Miguel Ángel Florido
 // =============================================================
 
-const API = (location.port === '3001' || location.port === '')
-    ? '/api'
-    : 'http://localhost:3001/api';
+// API siempre relativa: el backend sirve también el frontend, así que la API
+// está en el mismo origin que la página. Esto evita romper desde otros PCs.
+const API = '/api';
 
 // ----------- Estado global -----------
 const state = {
@@ -643,7 +643,15 @@ function bindEventos() {
         catch { cerrarSesion(); }
     }
 
+    // Kill switch: desregistra cualquier service worker antiguo y limpia caches.
+    // El sw.js antiguo cacheaba app.js con localhost hardcodeado y rompía el login
+    // desde otros PCs. Mantenemos esta limpieza permanente para no volver a caer.
     if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js').catch(() => {});
+        navigator.serviceWorker.getRegistrations()
+            .then(regs => Promise.all(regs.map(r => r.unregister())))
+            .catch(() => {});
+    }
+    if ('caches' in window) {
+        caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).catch(() => {});
     }
 })();
