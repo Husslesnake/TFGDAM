@@ -68,12 +68,93 @@ router.get('/', async (req, res) => {
     res.json({ data: rows, page, limit, total, pages: Math.ceil(total / limit) });
 });
 
+// POST /api/productos/import  → importación masiva (admin/operario)
+// body: { productos: [ {sku?, nombre, descripcion?, categoria_id?, ubicacion, stock?, stock_minimo?, precio?}, ... ] }
+// Devuelve por fila: { linea, ok, id?, error? }
+router.post('/import', authRequired, requireRole('admin','operario'), async (req, res) => {
+    const productos = Array.isArray(req.body?.productos) ? req.body.productos : null;
+    if (!productos || !productos.length) return res.status(400).json({ error: 'Array "productos" vacío o ausente' });
+    if (productos.length > 2000) return res.status(400).json({ error: 'Máximo 2000 filas por import' });
+
+    // Pre-cargamos los SKUs ya generados con SKU-NNNNN para sugerir nuevos sin colisión
+    const [[srow]] = await pool.query(
+        `SELECT MAX(CAST(SUBSTRING(sku, 5) AS UNSIGNED)) AS max FROM productos WHERE sku LIKE 'SKU-%'`);
+    let next = (srow?.max || 0);
+    const sugerir = () => 'SKU-' + String(++next).padStart(5, '0');
+
+    const resultados = [];
+    for (let i = 0; i < productos.length; i++) {
+        const p   = productos[i] || {};
+        const ln  = (p.__linea ?? i + 2);            // línea original del CSV (1 = cabecera)
+        const sku = (p.sku && String(p.sku).trim()) ? String(p.sku).trim().toUpperCase() : sugerir();
+        const fila = { ...p, sku };
+
+        const errs = validarProducto(fila);
+        if (errs.length) {
+            resultados.push({ linea: ln, ok: false, error: errs.join('; ') });
+            continue;
+        }
+        const { nombre, descripcion, categoria_id, ubicacion, stock = 0, stock_minimo = 5, precio = 0 } = fila;
+        try {
+            const [r] = await pool.query(
+                `INSERT INTO productos (sku, nombre, descripcion, categoria_id, ubicacion, stock, stock_minimo, precio)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [sku, String(nombre).trim(), descripcion || null, categoria_id || null, String(ubicacion).trim().toUpperCase(),
+                 +stock, +stock_minimo, +precio]
+            );
+            if (+stock > 0) {
+                await pool.query(
+                    `INSERT INTO movimientos (producto_id, usuario_id, tipo, cantidad, stock_anterior, stock_posterior, motivo)
+                     VALUES (?, ?, 'entrada', ?, 0, ?, 'Importación CSV')`,
+                    [r.insertId, req.user.id, +stock, +stock]
+                );
+            }
+            resultados.push({ linea: ln, ok: true, id: r.insertId, sku });
+        } catch (e) {
+            const msg = e.code === 'ER_DUP_ENTRY' ? `SKU '${sku}' duplicado` : e.message;
+            resultados.push({ linea: ln, ok: false, error: msg });
+        }
+    }
+
+    const creados   = resultados.filter(r => r.ok).length;
+    const fallidos  = resultados.length - creados;
+    res.json({ creados, fallidos, resultados });
+});
+
 // GET /api/productos/sku-sugerido  → siguiente SKU disponible (SKU-NNNNN)
 router.get('/sku-sugerido', authRequired, requireRole('admin','operario'), async (_req, res) => {
     const [[row]] = await pool.query(
         `SELECT MAX(CAST(SUBSTRING(sku, 5) AS UNSIGNED)) AS max FROM productos WHERE sku LIKE 'SKU-%'`);
     const next = (row?.max || 0) + 1;
     res.json({ sku: 'SKU-' + String(next).padStart(5, '0') });
+});
+
+// GET /api/productos/:id/movimientos — histórico del producto (admin/operario)
+router.get('/:id/movimientos', authRequired, requireRole('admin','operario'), async (req, res) => {
+    const limit = Math.min(500, Math.max(1, parseInt(req.query.limit || '100', 10)));
+    const [[prod]] = await pool.query(
+        'SELECT id, sku, nombre, stock, stock_reservado, stock_minimo, ubicacion FROM productos WHERE id = ?',
+        [req.params.id]
+    );
+    if (!prod) return res.status(404).json({ error: 'Producto no encontrado' });
+
+    const [movs] = await pool.query(`
+        SELECT m.id, m.tipo, m.cantidad, m.stock_anterior, m.stock_posterior, m.motivo, m.fecha,
+               u.nombre AS usuario
+          FROM movimientos m
+          LEFT JOIN usuarios u ON u.id = m.usuario_id
+         WHERE m.producto_id = ?
+         ORDER BY m.fecha DESC, m.id DESC
+         LIMIT ?`, [req.params.id, limit]);
+
+    // Totales agregados por tipo (útil en el header del modal)
+    const totales = movs.reduce((acc, m) => {
+        acc[m.tipo] = (acc[m.tipo] || 0) + m.cantidad;
+        acc._total++;
+        return acc;
+    }, { _total: 0 });
+
+    res.json({ producto: prod, movimientos: movs, totales });
 });
 
 // GET /api/productos/:id

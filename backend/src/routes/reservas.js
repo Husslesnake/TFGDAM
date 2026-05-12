@@ -2,9 +2,64 @@ const router = require('express').Router();
 const pool = require('../db');
 const { authRequired, requireRole } = require('../middleware/auth');
 
+// =============================================================
+// Helper: aplica una transición a UNA reserva dentro de una transacción.
+// accion ∈ {'confirmar','entregar','cancelar'}.
+// Lanza Error si la transición no es legítima.
+// =============================================================
+async function transitarReserva(conn, id, accion, user) {
+    const [[r]] = await conn.query(
+        'SELECT usuario_id, producto_id, cantidad, estado FROM reservas WHERE id = ? FOR UPDATE',
+        [id]);
+    if (!r) throw new Error('Reserva no encontrada');
+
+    if (accion === 'cancelar') {
+        if (user.rol === 'cliente' && r.usuario_id !== user.id) throw new Error('No autorizado');
+        if (r.estado === 'cancelada') throw new Error('Ya cancelada');
+        if (r.estado === 'entregada') throw new Error('Ya entregada');
+        await conn.query("UPDATE reservas SET estado = 'cancelada' WHERE id = ?", [id]);
+        await conn.query(
+            'UPDATE productos SET stock_reservado = GREATEST(0, stock_reservado - ?) WHERE id = ?',
+            [r.cantidad, r.producto_id]);
+        await conn.query(
+            `INSERT INTO movimientos (producto_id, usuario_id, tipo, cantidad, stock_anterior, stock_posterior, motivo)
+             VALUES (?, ?, 'liberacion', ?, 0, 0, ?)`,
+            [r.producto_id, user.id, r.cantidad, `Cancelación reserva #${id}`]);
+        return;
+    }
+
+    // confirmar / entregar requieren staff
+    if (!['admin','operario'].includes(user.rol)) throw new Error('No autorizado');
+    if (r.estado === 'cancelada') throw new Error('Reserva cancelada');
+
+    if (accion === 'confirmar') {
+        if (r.estado !== 'pendiente') throw new Error('Sólo se pueden confirmar reservas pendientes');
+        await conn.query("UPDATE reservas SET estado = 'confirmada' WHERE id = ?", [id]);
+        return;
+    }
+
+    if (accion === 'entregar') {
+        if (r.estado === 'entregada') throw new Error('Ya entregada');
+        const [[prod]] = await conn.query(
+            'SELECT stock, stock_reservado FROM productos WHERE id = ? FOR UPDATE',
+            [r.producto_id]);
+        await conn.query(
+            'UPDATE productos SET stock = stock - ?, stock_reservado = GREATEST(0, stock_reservado - ?) WHERE id = ?',
+            [r.cantidad, r.cantidad, r.producto_id]);
+        await conn.query(
+            "UPDATE reservas SET estado = 'entregada', fecha_entrega = NOW() WHERE id = ?",
+            [id]);
+        await conn.query(
+            `INSERT INTO movimientos (producto_id, usuario_id, tipo, cantidad, stock_anterior, stock_posterior, motivo)
+             VALUES (?, ?, 'salida', ?, ?, ?, ?)`,
+            [r.producto_id, user.id, r.cantidad, prod.stock, prod.stock - r.cantidad, `Entrega reserva #${id}`]);
+        return;
+    }
+
+    throw new Error('Acción no reconocida');
+}
+
 // GET /api/reservas
-// - cliente: solo las suyas
-// - operario/admin: todas (filtros opcionales)
 router.get('/', authRequired, async (req, res) => {
     const params = [];
     const where = [];
@@ -73,73 +128,66 @@ router.post('/', authRequired, async (req, res) => {
     } finally { conn.release(); }
 });
 
-// PATCH /api/reservas/:id/estado  (operario/admin)
-router.patch('/:id/estado', authRequired, requireRole('admin','operario'), async (req, res) => {
-    const { estado } = req.body || {};
-    if (!['pendiente','confirmada','entregada'].includes(estado)) {
-        return res.status(400).json({ error: 'Estado inválido' });
+// POST /api/reservas/bulk  → aplica una misma acción a varias reservas
+// body: { ids: [...], accion: 'confirmar' | 'entregar' | 'cancelar' }
+router.post('/bulk', authRequired, async (req, res) => {
+    const { ids, accion } = req.body || {};
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids vacío' });
+    if (ids.length > 100) return res.status(400).json({ error: 'Máximo 100 reservas por operación' });
+    if (!['confirmar','entregar','cancelar'].includes(accion)) return res.status(400).json({ error: 'Acción no válida' });
+    if (req.user.rol === 'cliente' && accion !== 'cancelar') {
+        return res.status(403).json({ error: 'Sólo puedes cancelar tus reservas' });
     }
+
+    const resultados = [];
+    for (const id of ids) {
+        const conn = await pool.getConnection();
+        try {
+            await conn.beginTransaction();
+            await transitarReserva(conn, id, accion, req.user);
+            await conn.commit();
+            resultados.push({ id, ok: true });
+        } catch (e) {
+            await conn.rollback();
+            resultados.push({ id, ok: false, error: e.message });
+        } finally { conn.release(); }
+    }
+    const aplicadas = resultados.filter(r => r.ok).length;
+    res.json({ aplicadas, fallidas: resultados.length - aplicadas, resultados });
+});
+
+// PATCH /api/reservas/:id/estado  (operario/admin) — adaptador al helper
+router.patch('/:id/estado', authRequired, requireRole('admin','operario'), async (req, res) => {
+    const map = { confirmada: 'confirmar', entregada: 'entregar' };
+    const accion = map[req.body?.estado];
+    if (!accion) return res.status(400).json({ error: 'Estado inválido' });
     const conn = await pool.getConnection();
     try {
         await conn.beginTransaction();
-        const [[r]] = await conn.query(
-            'SELECT producto_id, cantidad, estado FROM reservas WHERE id = ? FOR UPDATE',
-            [req.params.id]);
-        if (!r) { await conn.rollback(); return res.status(404).json({ error: 'No encontrada' }); }
-        if (r.estado === 'cancelada') { await conn.rollback(); return res.status(400).json({ error: 'Reserva cancelada' }); }
-
-        if (estado === 'entregada' && r.estado !== 'entregada') {
-            const [[prod]] = await conn.query('SELECT stock, stock_reservado FROM productos WHERE id = ? FOR UPDATE', [r.producto_id]);
-            await conn.query(
-                'UPDATE productos SET stock = stock - ?, stock_reservado = GREATEST(0, stock_reservado - ?) WHERE id = ?',
-                [r.cantidad, r.cantidad, r.producto_id]);
-            await conn.query(
-                "UPDATE reservas SET estado = 'entregada', fecha_entrega = NOW() WHERE id = ?",
-                [req.params.id]);
-            await conn.query(
-                `INSERT INTO movimientos (producto_id, usuario_id, tipo, cantidad, stock_anterior, stock_posterior, motivo)
-                 VALUES (?, ?, 'salida', ?, ?, ?, ?)`,
-                [r.producto_id, req.user.id, r.cantidad, prod.stock, prod.stock - r.cantidad, `Entrega reserva #${req.params.id}`]);
-        } else {
-            await conn.query('UPDATE reservas SET estado = ? WHERE id = ?', [estado, req.params.id]);
-        }
+        await transitarReserva(conn, req.params.id, accion, req.user);
         await conn.commit();
         res.json({ ok: true });
     } catch (e) {
         await conn.rollback();
-        res.status(500).json({ error: e.message });
+        res.status(/no encontrada/i.test(e.message) ? 404 : 400).json({ error: e.message });
     } finally { conn.release(); }
 });
 
-// DELETE /api/reservas/:id  (cancelar)
+// DELETE /api/reservas/:id  (cancelar) — adaptador al helper
 router.delete('/:id', authRequired, async (req, res) => {
     const conn = await pool.getConnection();
     try {
         await conn.beginTransaction();
-        const [[r]] = await conn.query(
-            'SELECT usuario_id, producto_id, cantidad, estado FROM reservas WHERE id = ? FOR UPDATE',
-            [req.params.id]);
-        if (!r) { await conn.rollback(); return res.status(404).json({ error: 'No encontrada' }); }
-        if (req.user.rol === 'cliente' && r.usuario_id !== req.user.id) {
-            await conn.rollback();
-            return res.status(403).json({ error: 'No autorizado' });
-        }
-        if (r.estado === 'cancelada') { await conn.rollback(); return res.status(400).json({ error: 'Ya cancelada' }); }
-        if (r.estado === 'entregada') { await conn.rollback(); return res.status(400).json({ error: 'Ya entregada' }); }
-
-        await conn.query("UPDATE reservas SET estado = 'cancelada' WHERE id = ?", [req.params.id]);
-        await conn.query(
-            'UPDATE productos SET stock_reservado = GREATEST(0, stock_reservado - ?) WHERE id = ?',
-            [r.cantidad, r.producto_id]);
-        await conn.query(
-            `INSERT INTO movimientos (producto_id, usuario_id, tipo, cantidad, stock_anterior, stock_posterior, motivo)
-             VALUES (?, ?, 'liberacion', ?, 0, 0, ?)`,
-            [r.producto_id, req.user.id, r.cantidad, `Cancelación reserva #${req.params.id}`]);
+        await transitarReserva(conn, req.params.id, 'cancelar', req.user);
         await conn.commit();
         res.json({ ok: true });
     } catch (e) {
         await conn.rollback();
-        res.status(500).json({ error: e.message });
+        const m = e.message;
+        const code = /no encontrada/i.test(m) ? 404
+                    : /no autorizado/i.test(m) ? 403
+                    : 400;
+        res.status(code).json({ error: m });
     } finally { conn.release(); }
 });
 

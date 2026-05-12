@@ -359,35 +359,161 @@ async function cargarReservas() {
     } catch (e) { toast(e.message, 'error'); }
 }
 
+// Selección bulk de reservas — Set<id>. Se vacía al recargar la lista.
+const _resSel = { ids: new Set(), data: [] };
+
 function renderReservas(data) {
     const cont = $('#reservas-lista');
     cont.innerHTML = '';
+    _resSel.data = data;
+    // Filtra IDs huérfanos de la selección (estado ya cambiado o filtro distinto)
+    const idsVisibles = new Set(data.map(r => r.id));
+    for (const id of [..._resSel.ids]) if (!idsVisibles.has(id)) _resSel.ids.delete(id);
+
     if (!data.length) {
         cont.append(el('p', { class: 'muted' }, 'No hay reservas con estos filtros.'));
+        actualizarBarraSeleccion();
         return;
     }
-    const esStaff = state.user.rol !== 'cliente';
-    data.forEach(r => {
-        const acciones = el('div', { class: 'small-actions' });
-        if (esStaff && r.estado === 'pendiente')
-            acciones.append(el('button', { class: 'btn btn-ghost', onclick: () => cambiarEstadoReserva(r.id, 'confirmada') }, 'Confirmar'));
-        if (esStaff && (r.estado === 'pendiente' || r.estado === 'confirmada'))
-            acciones.append(el('button', { class: 'btn btn-primary', onclick: () => cambiarEstadoReserva(r.id, 'entregada') }, 'Entregar'));
-        if ((r.estado === 'pendiente' || r.estado === 'confirmada'))
-            acciones.append(el('button', { class: 'btn btn-danger', onclick: () => cancelarReserva(r.id) }, 'Cancelar'));
+    const staff = esStaff();
 
-        const fila = el('div', { class: 'reserva' },
+    // Cabecera con "Seleccionar todas" (sólo si hay reservas seleccionables)
+    const seleccionables = data.filter(r => puedeAccionarReserva(r));
+    if (seleccionables.length) {
+        const todos = seleccionables.every(r => _resSel.ids.has(r.id));
+        const algunos = seleccionables.some(r => _resSel.ids.has(r.id));
+        const cab = el('label', { class: 'reservas-seltodo' },
+            (() => {
+                const cb = el('input', { type: 'checkbox' });
+                cb.checked = todos; cb.indeterminate = algunos && !todos;
+                cb.onchange = () => {
+                    if (cb.checked) seleccionables.forEach(r => _resSel.ids.add(r.id));
+                    else seleccionables.forEach(r => _resSel.ids.delete(r.id));
+                    renderReservas(data);
+                };
+                return cb;
+            })(),
+            el('span', { class: 'muted' }, `Seleccionar ${seleccionables.length} reserva(s)`)
+        );
+        cont.append(cab);
+    }
+
+    data.forEach(r => {
+        const seleccionable = puedeAccionarReserva(r);
+        const checked = _resSel.ids.has(r.id);
+
+        const checkbox = el('input', {
+            type: 'checkbox',
+            class: 'reserva-check',
+            disabled: !seleccionable,
+            title: seleccionable ? 'Seleccionar para acción en bloque' : 'Reserva en estado final',
+            onchange: e => {
+                if (e.target.checked) _resSel.ids.add(r.id);
+                else _resSel.ids.delete(r.id);
+                actualizarBarraSeleccion();
+                // Re-render sólo si el "seleccionar todas" debe cambiar
+                renderReservas(data);
+            }
+        });
+        if (checked) checkbox.checked = true;
+
+        const acciones = el('div', { class: 'small-actions' });
+        if (staff && r.estado === 'pendiente')
+            acciones.append(el('button', { class: 'btn btn-ghost btn-mini',  onclick: () => cambiarEstadoReserva(r.id, 'confirmada') }, 'Confirmar'));
+        if (staff && (r.estado === 'pendiente' || r.estado === 'confirmada'))
+            acciones.append(el('button', { class: 'btn btn-primary btn-mini', onclick: () => cambiarEstadoReserva(r.id, 'entregada') }, 'Entregar'));
+        if (r.estado === 'pendiente' || r.estado === 'confirmada')
+            acciones.append(el('button', { class: 'btn btn-danger btn-mini',  onclick: () => cancelarReserva(r.id) }, 'Cancelar'));
+
+        const fila = el('div', { class: 'reserva' + (checked ? ' seleccionada' : '') },
+            checkbox,
             el('div', { class: 'info' },
-                el('strong', {}, `${r.sku} · ${r.producto}`),
+                el('strong', {},
+                    skuLink({ id: r.producto_id, sku: r.sku }, 'sku sku-inline'),
+                    ' · ', r.producto
+                ),
                 el('div', { class: 'muted' }, `Cantidad: ${r.cantidad} · Ubicación: ${r.ubicacion}`),
                 el('div', { class: 'muted' }, `Reservada: ${fmtDate(r.fecha_reserva)}` + (r.fecha_recogida ? ` · Recogida: ${r.fecha_recogida}` : '')),
-                esStaff && el('div', { class: 'muted' }, `👤 ${r.usuario}`)
+                staff && el('div', { class: 'muted' }, `👤 ${r.usuario}`)
             ),
             el('span', { class: 'estado ' + r.estado }, r.estado),
             acciones
         );
         cont.append(fila);
     });
+
+    actualizarBarraSeleccion();
+}
+
+/** True si esta reserva puede transicionarse por el usuario actual. */
+function puedeAccionarReserva(r) {
+    if (r.estado === 'entregada' || r.estado === 'cancelada') return false;
+    if (state.user.rol === 'cliente') return r.usuario_id === state.user.id;
+    return true;  // staff: cualquier no-final
+}
+
+function actualizarBarraSeleccion() {
+    const bar = $('#bulk-bar');
+    if (!bar) return;
+    if (_resSel.ids.size === 0) { bar.classList.add('hidden'); return; }
+
+    const seleccionadas = _resSel.data.filter(r => _resSel.ids.has(r.id));
+    const algunaPendiente   = seleccionadas.some(r => r.estado === 'pendiente');
+    const algunaActiva      = seleccionadas.some(r => r.estado === 'pendiente' || r.estado === 'confirmada');
+    const staff = esStaff();
+
+    bar.classList.remove('hidden');
+    bar.innerHTML = `
+        <div class="bulk-info">
+            <span class="bulk-count">${_resSel.ids.size}</span>
+            <span class="muted">reserva(s) seleccionada(s)</span>
+        </div>
+        <div class="bulk-acciones">
+            ${staff && algunaPendiente ? '<button class="btn btn-ghost"   data-bulk="confirmar">✓ Confirmar</button>' : ''}
+            ${staff && algunaActiva    ? '<button class="btn btn-primary" data-bulk="entregar">📦 Entregar</button>' : ''}
+            ${algunaActiva             ? '<button class="btn btn-danger"  data-bulk="cancelar">✕ Cancelar</button>' : ''}
+            <button class="btn btn-ghost" data-bulk="clear">Limpiar</button>
+        </div>
+    `;
+    bar.querySelectorAll('[data-bulk]').forEach(b => {
+        b.onclick = () => accionBulk(b.dataset.bulk);
+    });
+}
+
+const _ACCION_LABEL = {
+    confirmar: { titulo: 'Confirmar reservas', verbo: 'confirmar', icono: '✓', peligroso: false },
+    entregar:  { titulo: 'Entregar reservas',  verbo: 'entregar',  icono: '📦', peligroso: false },
+    cancelar:  { titulo: 'Cancelar reservas',  verbo: 'cancelar',  icono: '✕', peligroso: true }
+};
+
+async function accionBulk(accion) {
+    if (accion === 'clear') {
+        _resSel.ids.clear();
+        renderReservas(_resSel.data);
+        return;
+    }
+    const conf = _ACCION_LABEL[accion];
+    if (!conf) return;
+    const ids = [..._resSel.ids];
+    const ok = await confirmar({
+        titulo: conf.titulo,
+        mensaje: `Se va a ${conf.verbo} ${ids.length} reserva(s). Las que no estén en un estado válido se omitirán.`,
+        ok: `Sí, ${conf.verbo}`,
+        cancel: 'Volver',
+        peligroso: conf.peligroso,
+        icono: conf.icono
+    });
+    if (!ok) return;
+
+    try {
+        const r = await api('/reservas/bulk', { method: 'POST', body: JSON.stringify({ ids, accion }) });
+        const tipo = r.fallidas === 0 ? 'ok' : (r.aplicadas > 0 ? 'info' : 'error');
+        toast(`Bulk: ${r.aplicadas} aplicada(s) · ${r.fallidas} fallo(s)`, tipo);
+        _resSel.ids.clear();
+        cargarReservas();
+    } catch (e) {
+        toast(e.message, 'error');
+    }
 }
 
 async function cambiarEstadoReserva(id, estado) {
@@ -434,7 +560,11 @@ async function cargarDashboard() {
 
         const top = $('#top-productos'); top.innerHTML = '';
         s.topProductos.forEach((p, i) => top.append(
-            el('div', { class: 'rank-row' },
+            el('div', {
+                class: 'rank-row rank-clickable',
+                title: 'Ver histórico de movimientos',
+                onclick: () => abrirHistorial(p.id)
+            },
                 el('span', { class: 'rank-pos' }, `#${i + 1}`),
                 el('div', { style: 'flex:1' },
                     el('strong', {}, p.nombre),
@@ -452,13 +582,9 @@ async function cargarDashboard() {
                 el('span', { class: 'muted' }, fmtDate(m.fecha))
             )));
 
-        $('#link-csv').onclick = async (e) => {
+        $('#link-csv').onclick = (e) => {
             e.preventDefault();
-            const r = await fetch(`${API}/admin/export/reservas.csv`, { headers: { Authorization: `Bearer ${state.token}` } });
-            const blob = await r.blob();
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a'); a.href = url; a.download = 'reservas.csv'; a.click();
-            URL.revokeObjectURL(url);
+            descargarBlob('/admin/export/reservas.csv', 'reservas.csv');
         };
     } catch (e) { toast(e.message, 'error'); }
 }
@@ -492,7 +618,7 @@ async function cargarInventario() {
         r.data.forEach(p => {
             const disp = p.stock - p.stock_reservado;
             const fila = el('tr', {},
-                el('td', {}, p.sku),
+                el('td', {}, skuLink(p, 'sku')),
                 el('td', {}, p.nombre),
                 el('td', {}, p.categoria || '—'),
                 el('td', {}, p.ubicacion),
@@ -657,6 +783,701 @@ function abrirModalUsuario(u) {
 }
 
 // =============================================================
+// Descargas autenticadas (CSV exports)
+// =============================================================
+async function descargarBlob(path, filenameDefault) {
+    try {
+        const headers = {};
+        if (state.token) headers.Authorization = `Bearer ${state.token}`;
+        const r = await fetch(`${API}${path}`, { headers });
+        if (!r.ok) {
+            const txt = await r.text().catch(() => '');
+            throw new Error(txt || `HTTP ${r.status}`);
+        }
+        const blob = await r.blob();
+        // Si el servidor mandó Content-Disposition con filename, lo respetamos
+        const cd = r.headers.get('Content-Disposition') || '';
+        const m  = cd.match(/filename="?([^";]+)"?/i);
+        const filename = m ? m[1] : filenameDefault;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+    } catch (e) {
+        toast('No se pudo descargar: ' + e.message, 'error');
+    }
+}
+
+function exportarInventarioCSV() {
+    const f = state.invFiltro || {};
+    const params = new URLSearchParams();
+    if (f.search)    params.set('search',    f.search);
+    if (f.categoria) params.set('categoria', f.categoria);
+    if (f.stockBajo) params.set('stock_bajo', '1');
+    const q = params.toString();
+    descargarBlob('/admin/export/inventario.csv' + (q ? '?' + q : ''),
+                  'inventario-' + new Date().toISOString().slice(0,10) + '.csv');
+}
+
+
+
+/**
+ * Parser CSV mínimo pero robusto:
+ *  - Soporta comillas dobles para escapar comas y saltos de línea
+ *  - "" dentro de comillas escapa una comilla
+ *  - Acepta separador coma o punto y coma (auto-detección por la cabecera)
+ *  - Ignora líneas totalmente vacías
+ * Devuelve un array de arrays de strings.
+ */
+function parseCSV(texto) {
+    if (!texto) return [];
+    // BOM UTF-8
+    if (texto.charCodeAt(0) === 0xFEFF) texto = texto.slice(1);
+
+    // Auto-detección de separador (cabecera): cuenta ; vs , en la primera línea
+    const firstLineEnd = texto.indexOf('\n');
+    const headerLine = (firstLineEnd === -1 ? texto : texto.slice(0, firstLineEnd));
+    const sep = (headerLine.split(';').length > headerLine.split(',').length) ? ';' : ',';
+
+    const filas = [];
+    let actual = [];
+    let campo = '';
+    let dentroComillas = false;
+
+    for (let i = 0; i < texto.length; i++) {
+        const c = texto[i];
+        if (dentroComillas) {
+            if (c === '"') {
+                if (texto[i + 1] === '"') { campo += '"'; i++; }
+                else dentroComillas = false;
+            } else campo += c;
+        } else {
+            if (c === '"') dentroComillas = true;
+            else if (c === sep) { actual.push(campo); campo = ''; }
+            else if (c === '\n' || c === '\r') {
+                if (c === '\r' && texto[i + 1] === '\n') i++;
+                actual.push(campo); campo = '';
+                if (actual.some(s => s !== '')) filas.push(actual);
+                actual = [];
+            } else campo += c;
+        }
+    }
+    if (campo !== '' || actual.length) {
+        actual.push(campo);
+        if (actual.some(s => s !== '')) filas.push(actual);
+    }
+    return filas;
+}
+
+const _importState = {
+    filas: [],           // [{ linea, raw, errores, body }]
+    importando: false
+};
+
+async function abrirImportCSV() {
+    if (!esStaff()) return;
+    _importState.filas = [];
+    _importState.importando = false;
+
+    // Aseguramos cache de categorías
+    if (!cargarCategorias._cache) {
+        try { cargarCategorias._cache = await api('/categorias'); } catch {}
+    }
+
+    $('#modal-titulo').textContent = 'Importar productos desde CSV';
+    pintarImportPaso1();
+    $('#modal-foot').innerHTML = `<button class="btn btn-ghost" id="imp-cerrar">Cerrar</button>`;
+    $('#imp-cerrar').onclick = cerrarModal;
+    abrirModal();
+}
+
+function pintarImportPaso1() {
+    $('#modal-body').innerHTML = `
+        <div class="imp-help">
+            <p>Sube un archivo <code>.csv</code> con cabecera. Las columnas reconocidas son:</p>
+            <code class="imp-cabecera-ejemplo">sku,nombre,descripcion,categoria,ubicacion,stock,stock_minimo,precio</code>
+            <ul class="imp-notas muted">
+                <li>El <strong>nombre</strong> y la <strong>ubicación</strong> son obligatorios. Si dejas el SKU vacío se autogenera.</li>
+                <li><strong>categoria</strong> es el nombre exacto (se resuelve al ID). Si no existe, esa fila se marca como error.</li>
+                <li>Numéricos vacíos → 0 (precio/stock) o 5 (stock_mínimo).</li>
+                <li>Separador detectado automáticamente: coma o punto y coma.</li>
+            </ul>
+            <div class="imp-actions">
+                <label class="btn btn-primary imp-file-btn">
+                    📁 Seleccionar archivo CSV
+                    <input id="imp-file" type="file" accept=".csv,text/csv" hidden>
+                </label>
+                <a class="btn btn-ghost" id="imp-plantilla" href="#">⬇ Descargar plantilla</a>
+            </div>
+        </div>
+    `;
+    $('#imp-file').onchange = onFicheroSeleccionado;
+    $('#imp-plantilla').onclick = (e) => { e.preventDefault(); descargarPlantillaCSV(); };
+}
+
+function descargarPlantillaCSV() {
+    const csv = 'sku,nombre,descripcion,categoria,ubicacion,stock,stock_minimo,precio\n' +
+                ',Taladro percutor 750W,Profesional con maletín,Herramientas eléctricas,A-12-3,15,5,89.90\n' +
+                ',Caja de tornillos M6 x 200ud,Acero inoxidable,Tornillería,B-04-1,40,10,12.50\n';
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = 'plantilla-productos.csv';
+    a.click(); URL.revokeObjectURL(url);
+}
+
+async function onFicheroSeleccionado(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast('Archivo demasiado grande (>5 MB)', 'error'); return; }
+
+    const texto = await file.text();
+    const filas = parseCSV(texto);
+    if (filas.length < 2) { toast('El CSV no tiene datos', 'error'); return; }
+
+    const cabecera = filas[0].map(s => s.trim().toLowerCase());
+    if (!cabecera.includes('nombre') || !cabecera.includes('ubicacion')) {
+        toast('La cabecera debe incluir al menos "nombre" y "ubicacion"', 'error');
+        return;
+    }
+
+    _importState.filas = filas.slice(1).map((raw, i) => parsearFila(raw, cabecera, i + 2));
+    pintarImportPaso2(file.name);
+}
+
+function parsearFila(raw, cabecera, lineNumber) {
+    const col = nombre => {
+        const i = cabecera.indexOf(nombre);
+        return i >= 0 ? String(raw[i] ?? '').trim() : '';
+    };
+    const errores = [];
+
+    const sku       = col('sku');                          // opcional
+    const nombre    = col('nombre');
+    const ubicacion = col('ubicacion');
+    if (!nombre) errores.push("'nombre' vacío");
+    if (!ubicacion) errores.push("'ubicacion' vacía");
+
+    let categoria_id = null;
+    const nombreCat = col('categoria');
+    if (nombreCat) {
+        const cats = cargarCategorias._cache || [];
+        const match = cats.find(c => c.nombre.toLowerCase() === nombreCat.toLowerCase());
+        if (!match) errores.push(`Categoría desconocida: "${nombreCat}"`);
+        else categoria_id = match.id;
+    }
+
+    const toInt = (s, def) => { const n = parseInt(s, 10); return isNaN(n) ? def : n; };
+    const toFloat = (s, def) => { const n = parseFloat(String(s).replace(',', '.')); return isNaN(n) ? def : n; };
+
+    const body = {
+        __linea: lineNumber,
+        sku: sku ? sku.toUpperCase() : '',
+        nombre: nombre,
+        descripcion: col('descripcion') || null,
+        categoria_id,
+        ubicacion: ubicacion.toUpperCase(),
+        stock:        toInt(col('stock'), 0),
+        stock_minimo: toInt(col('stock_minimo'), 5),
+        precio:       toFloat(col('precio'), 0)
+    };
+
+    return { linea: lineNumber, raw, body, errores };
+}
+
+function pintarImportPaso2(filename) {
+    const filas = _importState.filas;
+    const validas = filas.filter(f => !f.errores.length);
+    const invalidas = filas.length - validas.length;
+
+    const filasPreview = filas.slice(0, 50).map(f => `
+        <tr class="${f.errores.length ? 'imp-fila-error' : 'imp-fila-ok'}" title="${esc(f.errores.join('; '))}">
+            <td>${f.linea}</td>
+            <td>${f.errores.length ? '<span class="imp-badge bad">✗</span>' : '<span class="imp-badge ok">✓</span>'}</td>
+            <td><code>${esc(f.body.sku || '(auto)')}</code></td>
+            <td>${esc(f.body.nombre || '—')}</td>
+            <td>${esc(f.body.ubicacion || '—')}</td>
+            <td>${esc(String(f.body.stock))}</td>
+            <td>${esc(fmtMoney(f.body.precio))}</td>
+            <td class="imp-error-msg">${esc(f.errores.join('; '))}</td>
+        </tr>`).join('');
+
+    $('#modal-body').innerHTML = `
+        <div class="imp-resumen">
+            <div><strong>${esc(filename)}</strong> · ${filas.length} fila(s) leídas</div>
+            <div class="imp-counts">
+                <span class="imp-badge ok">${validas.length} válidas</span>
+                <span class="imp-badge ${invalidas ? 'bad' : 'muted'}">${invalidas} con error</span>
+            </div>
+        </div>
+        <div class="imp-tabla-wrap">
+            <table class="table imp-tabla">
+                <thead><tr>
+                    <th>Línea</th><th></th><th>SKU</th><th>Nombre</th><th>Ubic.</th><th>Stock</th><th>Precio</th><th>Errores</th>
+                </tr></thead>
+                <tbody>${filasPreview}</tbody>
+            </table>
+            ${filas.length > 50 ? `<p class="muted imp-mas">...y ${filas.length - 50} fila(s) más (no mostradas en preview)</p>` : ''}
+        </div>
+    `;
+    $('#modal-foot').innerHTML = `
+        <button class="btn btn-ghost" id="imp-volver">← Cambiar archivo</button>
+        <button class="btn btn-primary" id="imp-aplicar" ${validas.length ? '' : 'disabled'}>
+            ⤴ Importar ${validas.length} fila(s)
+        </button>
+    `;
+    $('#imp-volver').onclick = () => pintarImportPaso1();
+    $('#imp-aplicar').onclick = aplicarImport;
+}
+
+async function aplicarImport() {
+    if (_importState.importando) return;
+    _importState.importando = true;
+    const validas = _importState.filas.filter(f => !f.errores.length);
+    if (!validas.length) return;
+
+    $('#imp-aplicar').disabled = true;
+    $('#imp-aplicar').textContent = 'Importando…';
+
+    try {
+        const r = await api('/productos/import', {
+            method: 'POST',
+            body: JSON.stringify({ productos: validas.map(f => f.body) })
+        });
+        pintarImportResultado(r);
+    } catch (e) {
+        toast(e.message, 'error');
+        $('#imp-aplicar').disabled = false;
+        $('#imp-aplicar').textContent = `⤴ Importar ${validas.length} fila(s)`;
+    } finally {
+        _importState.importando = false;
+    }
+}
+
+function pintarImportResultado(r) {
+    const fallidos = r.resultados.filter(x => !x.ok);
+    $('#modal-body').innerHTML = `
+        <div class="imp-resultado">
+            <div class="confirm-icon ${r.fallidos > 0 ? 'danger' : ''}">${r.fallidos > 0 ? '⚠' : '✓'}</div>
+            <h3 class="imp-result-titulo">${r.creados} producto(s) creado(s) · ${r.fallidos} con error</h3>
+            ${fallidos.length ? `
+                <div class="imp-tabla-wrap" style="max-height:260px">
+                    <table class="table imp-tabla">
+                        <thead><tr><th>Línea</th><th>Error</th></tr></thead>
+                        <tbody>
+                            ${fallidos.map(f => `<tr><td>${f.linea}</td><td>${esc(f.error)}</td></tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>` : '<p class="muted">Sin errores. Inventario actualizado.</p>'}
+        </div>
+    `;
+    $('#modal-foot').innerHTML = `<button class="btn btn-primary" id="imp-ok">Cerrar</button>`;
+    $('#imp-ok').onclick = () => {
+        cerrarModal();
+        if (state.view === 'inventario') cargarInventario();
+        if (state.view === 'productos')  cargarProductos();
+    };
+    toast(`Import: ${r.creados} ok · ${r.fallidos} error`, r.fallidos === 0 ? 'ok' : (r.creados > 0 ? 'info' : 'error'));
+}
+
+// =============================================================
+// Editor de categorías (admin)
+// =============================================================
+const _catState = { editandoId: null, fusionandoId: null, borrandoId: null };
+
+async function abrirEditorCategorias() {
+    if (state.user?.rol !== 'admin') return;
+    _catState.editandoId = _catState.fusionandoId = _catState.borrandoId = null;
+    $('#modal-titulo').textContent = 'Gestión de categorías';
+    $('#modal-foot').innerHTML = `<button class="btn btn-primary" id="cat-cerrar">Cerrar</button>`;
+    $('#cat-cerrar').onclick = () => { cerrarModal(); cargarCategorias(); if (state.view === 'inventario') cargarInventario(); };
+    abrirModal();
+    await pintarCategorias();
+}
+
+async function pintarCategorias() {
+    $('#modal-body').innerHTML = `<div class="skeleton sk-block" style="height:300px"></div>`;
+    try {
+        const cats = await api('/categorias');
+        cargarCategorias._cache = cats;
+        renderCategorias(cats);
+    } catch (e) {
+        $('#modal-body').innerHTML = `<p class="muted">Error: ${esc(e.message)}</p>`;
+    }
+}
+
+function renderCategorias(cats) {
+    const filas = cats.map(c => renderCatFila(c, cats)).join('');
+    $('#modal-body').innerHTML = `
+        <div class="cat-nuevo">
+            <h4 class="cat-mini-titulo">Nueva categoría</h4>
+            <div class="cat-form">
+                <input id="cat-new-icono" type="text" placeholder="🏷" maxlength="4" style="width:64px">
+                <input id="cat-new-nombre" type="text" placeholder="Nombre de la categoría" maxlength="80" required>
+                <input id="cat-new-color" type="color" value="#8a4d0a" style="width:48px">
+                <button class="btn btn-primary" id="cat-new-ok">+ Crear</button>
+            </div>
+        </div>
+        <h4 class="cat-mini-titulo">Categorías existentes (${cats.length})</h4>
+        <div class="cat-lista">${filas || '<p class="muted">Sin categorías.</p>'}</div>
+    `;
+
+    $('#cat-new-ok').onclick = crearCategoria;
+    $('#cat-new-nombre').onkeydown = e => { if (e.key === 'Enter') crearCategoria(); };
+
+    cats.forEach(c => bindFilaCategoria(c, cats));
+}
+
+function renderCatFila(c, cats) {
+    const editando   = _catState.editandoId   === c.id;
+    const fusionando = _catState.fusionandoId === c.id;
+    const borrando   = _catState.borrandoId   === c.id;
+
+    if (editando) {
+        return `
+            <div class="cat-fila editando" data-id="${c.id}">
+                <input class="cat-icono" id="cat-${c.id}-icono" type="text" maxlength="4" value="${esc(c.icono || '')}" placeholder="🏷">
+                <input class="cat-nombre" id="cat-${c.id}-nombre" type="text" value="${esc(c.nombre)}" maxlength="80" required>
+                <input class="cat-color" id="cat-${c.id}-color" type="color" value="${esc(c.color || '#8a4d0a')}">
+                <button class="btn btn-primary btn-mini" data-act="save" data-id="${c.id}">Guardar</button>
+                <button class="btn btn-ghost btn-mini" data-act="cancel" data-id="${c.id}">Cancelar</button>
+            </div>`;
+    }
+
+    if (fusionando) {
+        const opts = cats.filter(x => x.id !== c.id)
+            .map(x => `<option value="${x.id}">${esc(x.icono || '')} ${esc(x.nombre)} (${x.productos})</option>`)
+            .join('');
+        return `
+            <div class="cat-fila fusionando" data-id="${c.id}">
+                <span class="cat-icono-display">${esc(c.icono || '🏷')}</span>
+                <span class="cat-nombre-display">${esc(c.nombre)} · ${c.productos} prod.</span>
+                <span class="muted">→</span>
+                <select class="cat-merge-dest" id="cat-${c.id}-dest">${opts || '<option disabled>No hay otras categorías</option>'}</select>
+                <button class="btn btn-primary btn-mini" data-act="merge-ok" data-id="${c.id}" ${!opts ? 'disabled' : ''}>Fusionar</button>
+                <button class="btn btn-ghost btn-mini" data-act="cancel" data-id="${c.id}">Cancelar</button>
+            </div>`;
+    }
+
+    if (borrando) {
+        const advertencia = c.productos > 0
+            ? `${c.productos} producto(s) quedarán sin categoría.`
+            : 'Esta categoría no tiene productos.';
+        return `
+            <div class="cat-fila borrando" data-id="${c.id}">
+                <span class="cat-icono-display">${esc(c.icono || '🏷')}</span>
+                <span class="cat-nombre-display">${esc(c.nombre)}</span>
+                <span class="muted cat-warn">⚠ ${esc(advertencia)}</span>
+                <button class="btn btn-danger btn-mini" data-act="del-ok" data-id="${c.id}">Borrar</button>
+                <button class="btn btn-ghost btn-mini" data-act="cancel" data-id="${c.id}">Cancelar</button>
+            </div>`;
+    }
+
+    const color = c.color || '#8a4d0a';
+    return `
+        <div class="cat-fila" data-id="${c.id}">
+            <span class="cat-icono-display" style="background:${esc(color)}33;color:${esc(color)}">${esc(c.icono || '🏷')}</span>
+            <span class="cat-nombre-display">${esc(c.nombre)}</span>
+            <span class="muted cat-count">${c.productos} prod.</span>
+            <div class="cat-acciones">
+                <button class="btn btn-ghost btn-mini" data-act="edit"   data-id="${c.id}" title="Renombrar">✏</button>
+                <button class="btn btn-ghost btn-mini" data-act="merge"  data-id="${c.id}" title="Fusionar con otra">↔</button>
+                <button class="btn btn-ghost btn-mini" data-act="del"    data-id="${c.id}" title="Borrar">🗑</button>
+            </div>
+        </div>`;
+}
+
+function bindFilaCategoria(c) {
+    document.querySelectorAll(`.cat-fila[data-id="${c.id}"] [data-act]`).forEach(b => {
+        b.onclick = () => accionCategoria(b.dataset.act, c);
+    });
+    if (_catState.editandoId === c.id) {
+        const inp = $(`#cat-${c.id}-nombre`);
+        if (inp) { inp.focus(); inp.select(); }
+    }
+}
+
+async function crearCategoria() {
+    const nombre = $('#cat-new-nombre').value.trim();
+    if (!nombre) return toast('Nombre obligatorio', 'error');
+    const icono = $('#cat-new-icono').value.trim();
+    const color = $('#cat-new-color').value;
+    try {
+        await api('/categorias', { method: 'POST', body: JSON.stringify({ nombre, icono, color }) });
+        toast(`Categoría "${nombre}" creada`, 'ok');
+        await pintarCategorias();
+    } catch (e) { toast(e.message, 'error'); }
+}
+
+async function accionCategoria(act, c) {
+    const cats = cargarCategorias._cache || [];
+
+    if (act === 'cancel') {
+        _catState.editandoId = _catState.fusionandoId = _catState.borrandoId = null;
+        renderCategorias(cats);
+        return;
+    }
+
+    if (act === 'edit') {
+        _catState.editandoId   = c.id;
+        _catState.fusionandoId = _catState.borrandoId = null;
+        renderCategorias(cats);
+        return;
+    }
+
+    if (act === 'save') {
+        const nombre = $(`#cat-${c.id}-nombre`).value.trim();
+        const icono  = $(`#cat-${c.id}-icono`).value.trim();
+        const color  = $(`#cat-${c.id}-color`).value;
+        if (!nombre) return toast('Nombre no puede estar vacío', 'error');
+        try {
+            await api(`/categorias/${c.id}`, { method: 'PATCH', body: JSON.stringify({ nombre, icono, color }) });
+            _catState.editandoId = null;
+            toast('Categoría actualizada', 'ok');
+            await pintarCategorias();
+        } catch (e) { toast(e.message, 'error'); }
+        return;
+    }
+
+    if (act === 'merge') {
+        _catState.fusionandoId = c.id;
+        _catState.editandoId = _catState.borrandoId = null;
+        renderCategorias(cats);
+        return;
+    }
+
+    if (act === 'merge-ok') {
+        const destino_id = +$(`#cat-${c.id}-dest`).value;
+        if (!destino_id) return;
+        try {
+            const r = await api(`/categorias/${c.id}/merge`, { method: 'POST', body: JSON.stringify({ destino_id }) });
+            toast(`Fusionada · ${r.productos_movidos} producto(s) movido(s)`, 'ok');
+            _catState.fusionandoId = null;
+            await pintarCategorias();
+        } catch (e) { toast(e.message, 'error'); }
+        return;
+    }
+
+    if (act === 'del') {
+        _catState.borrandoId = c.id;
+        _catState.editandoId = _catState.fusionandoId = null;
+        renderCategorias(cats);
+        return;
+    }
+
+    if (act === 'del-ok') {
+        try {
+            const r = await api(`/categorias/${c.id}?force=true`, { method: 'DELETE' });
+            toast(r.productos_desasignados > 0
+                ? `Borrada · ${r.productos_desasignados} producto(s) quedaron sin categoría`
+                : 'Categoría borrada', 'ok');
+            _catState.borrandoId = null;
+            await pintarCategorias();
+        } catch (e) { toast(e.message, 'error'); }
+        return;
+    }
+}
+
+// =============================================================
+// Histórico de movimientos por producto
+// =============================================================
+function esStaff() {
+    return state.user && (state.user.rol === 'admin' || state.user.rol === 'operario');
+}
+
+/**
+ * Devuelve un DOM Node con el SKU. Si el usuario es staff, lo hace clicable
+ * y abre el histórico del producto al pulsarlo.
+ */
+function skuLink(producto, claseExtra = 'sku') {
+    if (esStaff() && producto?.id) {
+        return el('button', {
+            class: claseExtra + ' sku-link',
+            title: 'Ver histórico de movimientos',
+            onclick: e => { e.stopPropagation(); abrirHistorial(producto.id); }
+        }, producto.sku);
+    }
+    return el('span', { class: claseExtra }, producto.sku);
+}
+
+async function abrirHistorial(productoId) {
+    $('#modal-titulo').textContent = 'Histórico de movimientos';
+    $('#modal-body').innerHTML = `
+        <div class="hist-cabecera skeleton-card">
+            <span class="skeleton sk-line long"></span>
+            <span class="skeleton sk-line medium"></span>
+        </div>
+        <div class="movimientos hist-lista">
+            ${Array.from({length: 8}).map(() => `
+                <div class="mov-row skeleton-card">
+                    <span class="skeleton sk-line short"></span>
+                    <span class="skeleton sk-line long"></span>
+                    <span class="skeleton sk-line short"></span>
+                    <span class="skeleton sk-line short"></span>
+                </div>`).join('')}
+        </div>
+    `;
+    $('#modal-foot').innerHTML = `<button class="btn btn-primary" id="hist-cerrar">Cerrar</button>`;
+    $('#hist-cerrar').onclick = cerrarModal;
+    abrirModal();
+
+    try {
+        const r = await api(`/productos/${productoId}/movimientos?limit=200`);
+        renderHistorial(r);
+    } catch (e) {
+        $('#modal-body').innerHTML = `<p class="muted">No se pudo cargar el histórico: ${esc(e.message)}</p>`;
+    }
+}
+
+function renderHistorial({ producto, movimientos, totales }) {
+    const disp = producto.stock - producto.stock_reservado;
+    const stockClase = disp <= 0 ? 'bad' : disp <= producto.stock_minimo ? 'warn' : '';
+
+    const chip = (label, value, extra='') => value
+        ? `<span class="hist-totals-chip ${extra}">${esc(label)}: <strong>${value}</strong></span>`
+        : '';
+
+    const cabecera = `
+        <div class="hist-cabecera">
+            <div>
+                <code class="sku">${esc(producto.sku)}</code>
+                <strong class="hist-nombre">${esc(producto.nombre)}</strong>
+                <div class="muted">📍 ${esc(producto.ubicacion)}</div>
+            </div>
+            <div class="hist-stock">
+                <span class="stock-chip ${stockClase}">Disponible: ${disp}</span>
+                <span class="muted">Stock total: ${producto.stock} · Reservado: ${producto.stock_reservado}</span>
+            </div>
+        </div>
+        <div class="hist-totals">
+            ${chip('Movimientos', totales._total)}
+            ${chip('Entradas',   totales.entrada,    'ok')}
+            ${chip('Salidas',    totales.salida,     'bad')}
+            ${chip('Ajustes',    totales.ajuste)}
+            ${chip('Reservas',   totales.reserva,    'warn')}
+            ${chip('Liberadas',  totales.liberacion)}
+        </div>
+    `;
+
+    if (!movimientos.length) {
+        $('#modal-body').innerHTML = cabecera +
+            '<p class="muted hist-empty">Sin movimientos registrados todavía.</p>';
+        return;
+    }
+
+    const lista = movimientos.map(m => {
+        const signo = m.cantidad > 0 ? `+${m.cantidad}` : String(m.cantidad);
+        return `
+            <div class="mov-row">
+                <span class="mov-tipo ${m.tipo}">${m.tipo}</span>
+                <span>
+                    <strong class="mov-cantidad">${signo}</strong>
+                    <span class="muted"> · ${m.stock_anterior} → ${m.stock_posterior}</span>
+                    ${m.motivo ? ` · <span class="muted">${esc(m.motivo)}</span>` : ''}
+                </span>
+                <span class="muted">${esc(m.usuario || '—')}</span>
+                <span class="muted">${esc(fmtDate(m.fecha))}</span>
+            </div>`;
+    }).join('');
+
+    $('#modal-body').innerHTML = cabecera +
+        `<div class="movimientos hist-lista">${lista}</div>`;
+}
+
+// =============================================================
+// Perfil
+// =============================================================
+function abrirModalPerfil() {
+    const u = state.user;
+    if (!u) return;
+
+    $('#modal-titulo').textContent = 'Mi perfil';
+    $('#modal-body').innerHTML = `
+        <div class="perfil-cabecera">
+            <span class="avatar perfil-avatar">${esc(iniciales(u.nombre))}</span>
+            <div>
+                <strong class="perfil-nombre">${esc(u.nombre)}</strong>
+                <span class="role-badge">${esc(u.rol)}</span>
+            </div>
+        </div>
+
+        <fieldset class="perfil-grupo">
+            <legend>Datos personales</legend>
+            <label>Nombre completo
+                <input id="perfil-nombre" type="text" value="${esc(u.nombre)}" required maxlength="120" autocomplete="name">
+            </label>
+            <label>Email
+                <input id="perfil-email" type="email" value="${esc(u.email)}" required autocomplete="email">
+            </label>
+        </fieldset>
+
+        <fieldset class="perfil-grupo">
+            <legend>Cambiar contraseña <small class="muted">(opcional)</small></legend>
+            <label>Contraseña actual
+                <input id="perfil-pass-actual" type="password" autocomplete="current-password" placeholder="Sólo si vas a cambiarla">
+            </label>
+            <label class="row-2">
+                <span>Nueva contraseña<input id="perfil-pass-nueva" type="password" minlength="6" autocomplete="new-password" placeholder="Mín. 6 caracteres"></span>
+                <span>Confirmar<input id="perfil-pass-conf" type="password" minlength="6" autocomplete="new-password"></span>
+            </label>
+        </fieldset>
+    `;
+    $('#modal-foot').innerHTML = `
+        <button class="btn btn-ghost" id="perfil-cancel">Cancelar</button>
+        <button class="btn btn-primary" id="perfil-ok">Guardar cambios</button>
+    `;
+    $('#perfil-cancel').onclick = cerrarModal;
+    $('#perfil-ok').onclick = guardarPerfil;
+    abrirModal();
+    setTimeout(() => $('#perfil-nombre')?.focus(), 60);
+}
+
+async function guardarPerfil() {
+    const u = state.user;
+    const nombreNuevo = $('#perfil-nombre').value.trim();
+    const emailNuevo  = $('#perfil-email').value.trim().toLowerCase();
+    const passActual  = $('#perfil-pass-actual').value;
+    const passNueva   = $('#perfil-pass-nueva').value;
+    const passConf    = $('#perfil-pass-conf').value;
+
+    if (!nombreNuevo) return toast('El nombre no puede estar vacío', 'error');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNuevo)) return toast('Email no válido', 'error');
+
+    const body = {};
+    if (nombreNuevo !== u.nombre)               body.nombre = nombreNuevo;
+    if (emailNuevo  !== u.email.toLowerCase())  body.email  = emailNuevo;
+
+    if (passNueva || passConf || passActual) {
+        if (!passActual) return toast('Indica tu contraseña actual', 'error');
+        if (passNueva.length < 6) return toast('La nueva contraseña debe tener al menos 6 caracteres', 'error');
+        if (passNueva !== passConf) return toast('Las contraseñas no coinciden', 'error');
+        body.password_actual = passActual;
+        body.password_nuevo  = passNueva;
+    }
+
+    if (Object.keys(body).length === 0) {
+        toast('No hay cambios que guardar', 'info');
+        cerrarModal();
+        return;
+    }
+
+    const btn = $('#perfil-ok'); btn.disabled = true;
+    try {
+        const r = await api('/auth/me', { method: 'PATCH', body: JSON.stringify(body) });
+        state.token = r.token; state.user = r.user;
+        localStorage.setItem('token', r.token);
+        localStorage.setItem('user', JSON.stringify(r.user));
+        pintarUsuario();
+        cerrarModal();
+        toast('Perfil actualizado', 'ok');
+    } catch (e) {
+        toast(e.message, 'error');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+// =============================================================
 // Modal helpers
 // =============================================================
 function abrirModal()  { $('#modal').classList.remove('hidden'); }
@@ -732,6 +1553,121 @@ function aplicarTema(t) {
 }
 
 // =============================================================
+// Atajos de teclado
+// =============================================================
+const VISTAS_ORDEN = ['productos', 'reservas', 'dashboard', 'inventario', 'usuarios'];
+const VISTAS_STAFF = new Set(['dashboard', 'inventario']);
+const VISTAS_ADMIN = new Set(['usuarios']);
+
+function puedeVerVista(view) {
+    if (!state.user) return false;
+    const rol = state.user.rol;
+    if (VISTAS_ADMIN.has(view)) return rol === 'admin';
+    if (VISTAS_STAFF.has(view)) return rol === 'admin' || rol === 'operario';
+    return true;
+}
+
+function focoEnBuscador() {
+    const sel = state.view === 'inventario' ? '#inv-buscar'
+              : state.view === 'productos'  ? '#buscar'
+              : null;
+    if (sel) {
+        const n = $(sel);
+        if (n) { n.focus(); n.select?.(); return; }
+    }
+    cambiarVista('productos');
+    setTimeout(() => { const b = $('#buscar'); if (b) { b.focus(); b.select?.(); } }, 60);
+}
+
+function mostrarAtajos() {
+    const esAdmin = state.user && (state.user.rol === 'admin' || state.user.rol === 'operario');
+    const esAdminPuro = state.user && state.user.rol === 'admin';
+    const rows = [
+        ['Ctrl + K', 'Buscar (o tecla /)'],
+        ['Esc',      'Cerrar modal / quitar foco'],
+        ['1',        'Ir a Productos'],
+        ['2',        'Ir a Reservas'],
+        esAdmin ? ['3', 'Ir a Dashboard'] : null,
+        esAdmin ? ['4', 'Ir a Inventario'] : null,
+        esAdminPuro ? ['5', 'Ir a Usuarios'] : null,
+        esAdmin ? ['Ctrl + N', 'Nuevo producto'] : null,
+        ['?',        'Mostrar esta ayuda']
+    ].filter(Boolean);
+
+    $('#modal-titulo').textContent = 'Atajos de teclado';
+    $('#modal-body').innerHTML = `
+        <div class="atajos-lista">
+            ${rows.map(([k, d]) => `
+                <div class="atajo-row">
+                    <kbd class="kbd">${esc(k)}</kbd>
+                    <span>${esc(d)}</span>
+                </div>`).join('')}
+        </div>
+    `;
+    $('#modal-foot').innerHTML = `<button class="btn btn-primary" id="atajos-ok">Entendido</button>`;
+    $('#atajos-ok').onclick = cerrarModal;
+    abrirModal();
+}
+
+function bindAtajos() {
+    const isTyping = el => el && (
+        el.tagName === 'INPUT' ||
+        el.tagName === 'TEXTAREA' ||
+        el.tagName === 'SELECT' ||
+        el.isContentEditable
+    );
+    const modalAbierto    = () => !$('#modal').classList.contains('hidden');
+    const dropdownAbierto = () => !$('#user-dropdown').classList.contains('hidden');
+    const appActiva       = () => !$('#app').classList.contains('hidden');
+
+    document.addEventListener('keydown', e => {
+        // Esc — universal
+        if (e.key === 'Escape') {
+            if (modalAbierto())    { cerrarModal(); return; }
+            if (dropdownAbierto()) { $('#user-dropdown').classList.add('hidden'); return; }
+            if (isTyping(document.activeElement)) document.activeElement.blur();
+            return;
+        }
+
+        if (isTyping(e.target)) return;   // escribiendo: no consumir teclas
+        if (modalAbierto()) return;       // modal abierto: solo Esc
+        if (!appActiva()) return;         // pantalla de login
+
+        const k = e.key;
+        const ctrl = e.ctrlKey || e.metaKey;
+
+        // Ctrl+K o '/': foco en buscador
+        if ((ctrl && (k === 'k' || k === 'K')) || k === '/') {
+            e.preventDefault();
+            focoEnBuscador();
+            return;
+        }
+
+        // Ctrl+N: nuevo producto (admin/operario)
+        if (ctrl && (k === 'n' || k === 'N')) {
+            if (state.user && (state.user.rol === 'admin' || state.user.rol === 'operario')) {
+                e.preventDefault();
+                abrirModalProducto();
+            }
+            return;
+        }
+
+        // 1-5: cambiar vista
+        if (!ctrl && !e.altKey && /^[1-5]$/.test(k)) {
+            const target = VISTAS_ORDEN[parseInt(k, 10) - 1];
+            if (puedeVerVista(target)) cambiarVista(target);
+            return;
+        }
+
+        // ?: ayuda
+        if (k === '?') {
+            e.preventDefault();
+            mostrarAtajos();
+        }
+    });
+}
+
+// =============================================================
 // Eventos
 // =============================================================
 function bindEventos() {
@@ -782,6 +1718,9 @@ function bindEventos() {
     $('#inv-categoria')?.addEventListener('change', e => { state.invFiltro.categoria = e.target.value; cargarInventario(); });
     $('#inv-stockbajo')?.addEventListener('change', e => { state.invFiltro.stockBajo = e.target.checked; cargarInventario(); });
     $('#btn-nuevo-producto')?.addEventListener('click', () => abrirModalProducto());
+    $('#btn-categorias')?.addEventListener('click', abrirEditorCategorias);
+    $('#btn-import-csv')?.addEventListener('click', abrirImportCSV);
+    $('#btn-export-csv')?.addEventListener('click', exportarInventarioCSV);
     $('#fab-nuevo')?.addEventListener('click', () => abrirModalProducto());
 
     // Usuarios
@@ -794,10 +1733,14 @@ function bindEventos() {
     // User dropdown
     $('#btn-user').onclick = e => { e.stopPropagation(); $('#user-dropdown').classList.toggle('hidden'); };
     document.addEventListener('click', () => $('#user-dropdown').classList.add('hidden'));
+    $('#btn-perfil').onclick = () => { $('#user-dropdown').classList.add('hidden'); abrirModalPerfil(); };
     $('#btn-logout').onclick = cerrarSesion;
 
     // Tema
     $('#btn-theme').onclick = () => aplicarTema(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+
+    // Atajos (botón ⌨ en topbar)
+    $('#btn-atajos')?.addEventListener('click', mostrarAtajos);
 }
 
 // =============================================================
@@ -805,6 +1748,7 @@ function bindEventos() {
 // =============================================================
 (async () => {
     bindEventos();
+    bindAtajos();
     aplicarTema(localStorage.getItem('theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
 
     if (state.token) {

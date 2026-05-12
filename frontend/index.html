@@ -81,14 +81,15 @@
     </div>
 
     <nav class="tabs desktop-tabs">
-        <button class="tab active" data-view="productos"><span class="tab-icon">🛒</span><span>Productos</span></button>
-        <button class="tab" data-view="reservas"><span class="tab-icon">📋</span><span>Reservas</span></button>
-        <button class="tab admin-only" data-view="dashboard"><span class="tab-icon">📊</span><span>Dashboard</span></button>
-        <button class="tab admin-only" data-view="inventario"><span class="tab-icon">📦</span><span>Inventario</span></button>
-        <button class="tab admin-only" data-view="usuarios"><span class="tab-icon">👥</span><span>Usuarios</span></button>
+        <button class="tab active" data-view="productos" title="Productos (1)"><span class="tab-icon">🛒</span><span>Productos</span></button>
+        <button class="tab" data-view="reservas" title="Reservas (2)"><span class="tab-icon">📋</span><span>Reservas</span></button>
+        <button class="tab admin-only" data-view="dashboard" title="Dashboard (3)"><span class="tab-icon">📊</span><span>Dashboard</span></button>
+        <button class="tab admin-only" data-view="inventario" title="Inventario (4)"><span class="tab-icon">📦</span><span>Inventario</span></button>
+        <button class="tab admin-only" data-view="usuarios" title="Usuarios (5)"><span class="tab-icon">👥</span><span>Usuarios</span></button>
     </nav>
 
     <div class="topbar-actions">
+        <button id="btn-atajos" class="icon-btn" title="Atajos de teclado (?)">⌨</button>
         <button id="btn-theme" class="icon-btn" title="Cambiar tema">🌙</button>
         <div class="user-menu">
             <button id="btn-user" class="user-chip">
@@ -101,6 +102,7 @@
                     <small id="dd-email"></small>
                     <span id="dd-rol" class="role-badge"></span>
                 </div>
+                <button id="btn-perfil" class="dropdown-item">👤 Mi perfil</button>
                 <button id="btn-logout" class="dropdown-item">🚪 Cerrar sesión</button>
             </div>
         </div>
@@ -118,7 +120,7 @@
         <div class="filtros">
             <div class="search-box">
                 <span class="search-icon">🔍</span>
-                <input id="buscar" type="search" placeholder="Buscar por nombre o SKU...">
+                <input id="buscar" type="search" placeholder="Buscar por nombre o SKU... (Ctrl+K)">
             </div>
             <select id="filtro-categoria">
                 <option value="">Todas las categorías</option>
@@ -193,7 +195,12 @@
     <section id="view-inventario" class="view admin-only">
         <div class="view-header">
             <h2>Inventario</h2>
-            <button id="btn-nuevo-producto" class="btn btn-primary">+ Nuevo producto</button>
+            <div class="view-acciones">
+                <button id="btn-export-csv" class="btn btn-ghost" title="Exportar a CSV (respeta filtros activos)">⬇ Exportar CSV</button>
+                <button id="btn-import-csv" class="btn btn-ghost" title="Importar productos desde CSV">📥 Importar CSV</button>
+                <button id="btn-categorias" class="btn btn-ghost" title="Gestionar categorías">🏷 Categorías</button>
+                <button id="btn-nuevo-producto" class="btn btn-primary">+ Nuevo producto</button>
+            </div>
         </div>
         <div class="filtros">
             <div class="search-box">
@@ -242,7 +249,7 @@
 </div><!-- /#app -->
 
 <!-- ===== FAB nuevo producto (admin/operario) ===== -->
-<button id="fab-nuevo" class="fab admin-only" title="Nuevo producto">+</button>
+<button id="fab-nuevo" class="fab admin-only" title="Nuevo producto (Ctrl+N)">+</button>
 
 <!-- ===== Modal genérico ===== -->
 <div id="modal" class="modal hidden">
@@ -256,6 +263,7 @@
     </div>
 </div>
 
+<div id="bulk-bar" class="bulk-bar hidden"></div>
 <div id="toast" class="toast hidden"></div>
 
 <script src="app.js"></script>
