@@ -64,6 +64,15 @@ async function api(path, opts = {}) {
 
 function fmt(n) { return new Intl.NumberFormat('es-ES').format(n); }
 function fmtMoney(n) { return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(+n || 0); }
+/** Formato monetario compacto (1,2K / 3,4M / 5,6B €) — útil para stats grandes. */
+function fmtMoneyCompact(n) {
+    const v = +n || 0;
+    if (Math.abs(v) < 10000) return fmtMoney(v);
+    return new Intl.NumberFormat('es-ES', {
+        style: 'currency', currency: 'EUR',
+        notation: 'compact', maximumFractionDigits: 1
+    }).format(v);
+}
 function fmtDate(d) { return d ? new Date(d).toLocaleString('es-ES') : '—'; }
 function iniciales(n) { return (n || '?').split(' ').map(x => x[0]).join('').slice(0, 2).toUpperCase(); }
 
@@ -418,6 +427,11 @@ function renderReservas(data) {
         if (checked) checkbox.checked = true;
 
         const acciones = el('div', { class: 'small-actions' });
+        acciones.append(el('button', {
+            class: 'btn btn-ghost btn-mini',
+            title: 'Imprimir albarán',
+            onclick: () => imprimirAlbaran(r)
+        }, '🖨'));
         if (staff && r.estado === 'pendiente')
             acciones.append(el('button', { class: 'btn btn-ghost btn-mini',  onclick: () => cambiarEstadoReserva(r.id, 'confirmada') }, 'Confirmar'));
         if (staff && (r.estado === 'pendiente' || r.estado === 'confirmada'))
@@ -524,6 +538,104 @@ async function cambiarEstadoReserva(id, estado) {
     } catch (e) { toast(e.message, 'error'); }
 }
 
+/**
+ * Genera el HTML del albarán en un div oculto y dispara window.print().
+ * Tras imprimir/cancelar, limpia el DOM.
+ */
+function imprimirAlbaran(r) {
+    // Elimina cualquier albarán anterior
+    document.getElementById('albaran-print')?.remove();
+
+    const estadoLabel = {
+        pendiente:  'PENDIENTE',
+        confirmada: 'CONFIRMADA',
+        entregada:  'ENTREGADA',
+        cancelada:  'CANCELADA'
+    }[r.estado] || r.estado.toUpperCase();
+
+    const ahora = new Date();
+    const impreso = ahora.toLocaleString('es-ES', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+    });
+
+    const div = document.createElement('div');
+    div.id = 'albaran-print';
+    div.innerHTML = `
+        <header class="alb-head">
+            <div class="alb-brand">
+                <div class="alb-logo">📦</div>
+                <div>
+                    <div class="alb-titulo">STOCKLY</div>
+                    <div class="alb-subtitulo">Albarán de reserva</div>
+                </div>
+            </div>
+            <div class="alb-meta">
+                <div><strong>Nº</strong> ${esc(String(r.id).padStart(6, '0'))}</div>
+                <div><strong>Estado</strong> ${esc(estadoLabel)}</div>
+                <div><strong>Fecha reserva</strong> ${esc(fmtDate(r.fecha_reserva))}</div>
+            </div>
+        </header>
+
+        <div class="alb-hazard"></div>
+
+        <section class="alb-bloque">
+            <h2>Cliente</h2>
+            <table>
+                <tr><th>Nombre</th><td>${esc(r.usuario || '—')}</td></tr>
+                <tr><th>Email</th> <td>${esc(r.usuario_email || '—')}</td></tr>
+            </table>
+        </section>
+
+        <section class="alb-bloque">
+            <h2>Producto</h2>
+            <table>
+                <tr><th>SKU</th>       <td><code>${esc(r.sku)}</code></td></tr>
+                <tr><th>Descripción</th><td>${esc(r.producto)}</td></tr>
+                <tr><th>Ubicación</th> <td>${esc(r.ubicacion || '—')}</td></tr>
+                <tr><th>Precio unidad</th><td>${esc(fmtMoney(r.precio))}</td></tr>
+            </table>
+        </section>
+
+        <section class="alb-bloque alb-detalles">
+            <h2>Detalles de la reserva</h2>
+            <table>
+                <tr><th>Cantidad</th>     <td class="alb-cantidad">${r.cantidad}</td></tr>
+                <tr><th>Importe total</th><td>${esc(fmtMoney((+r.precio || 0) * r.cantidad))}</td></tr>
+                <tr><th>Recogida prevista</th><td>${esc(r.fecha_recogida || '— sin fecha —')}</td></tr>
+                <tr><th>Fecha entrega</th><td>${esc(r.fecha_entrega ? fmtDate(r.fecha_entrega) : '—')}</td></tr>
+                ${r.notas ? `<tr><th>Notas</th><td>${esc(r.notas)}</td></tr>` : ''}
+            </table>
+        </section>
+
+        <footer class="alb-firma">
+            <div>
+                <div class="alb-firma-linea"></div>
+                <small>Firma del operario</small>
+            </div>
+            <div>
+                <div class="alb-firma-linea"></div>
+                <small>Firma del cliente · Recibí conforme</small>
+            </div>
+        </footer>
+
+        <div class="alb-pie">
+            Documento generado el ${esc(impreso)} · Stockly · TFG DAM
+        </div>
+    `;
+    document.body.appendChild(div);
+
+    // Llamar a print en el siguiente frame para que el navegador layoutee
+    requestAnimationFrame(() => {
+        window.print();
+        // Limpieza tras cerrar el diálogo (afterprint funciona en Chrome/Firefox/Edge)
+        const limpiar = () => { div.remove(); window.removeEventListener('afterprint', limpiar); };
+        window.addEventListener('afterprint', limpiar);
+        // Fallback: si afterprint no dispara (Safari viejo), limpia a los 2 s
+        setTimeout(limpiar, 60_000);
+    });
+}
+
 async function cancelarReserva(id) {
     const ok = await confirmar({
         titulo: 'Cancelar reserva',
@@ -553,7 +665,10 @@ async function cargarDashboard() {
         $('#st-usuarios').textContent   = fmt(s.totales.usuarios);
         $('#st-pendientes').textContent = fmt(s.totales.pendientes);
         $('#st-entregadas').textContent = fmt(s.totales.entregadas);
-        $('#st-valor').textContent      = fmtMoney(s.totales.valor_inventario);
+        const valor = s.totales.valor_inventario;
+        const stValor = $('#st-valor');
+        stValor.textContent = fmtMoneyCompact(valor);
+        stValor.title       = fmtMoney(valor);   // valor exacto al hacer hover
 
         renderBarChart('#chart-reservas', s.reservasPorDia.map(d => ({ label: d.dia.slice(5), value: d.total })));
         renderBarChart('#chart-categorias', s.porCategoria.map(c => ({ label: c.nombre.slice(0, 6), value: c.stock_total })));
