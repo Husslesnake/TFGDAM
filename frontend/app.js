@@ -21,6 +21,7 @@ const state = {
     dir: 'asc',
     productoSel: null,
     reservaFiltro: '',
+    historialFiltro: '',
     invFiltro: { search: '', categoria: '', stockBajo: false },
 };
 
@@ -145,8 +146,10 @@ function skeletonProductos(count = 8) {
     $('#prod-count').textContent = '';
 }
 
-function skeletonReservas(count = 5) {
-    const cont = $('#reservas-lista');
+function skeletonReservas(selector = '#reservas-lista', count = 5) {
+    // Compatibilidad: si pasan un numero como primer arg, asumimos selector por defecto
+    if (typeof selector === 'number') { count = selector; selector = '#reservas-lista'; }
+    const cont = $(selector);
     if (!cont) return;
     cont.innerHTML = '';
     for (let i = 0; i < count; i++) {
@@ -286,6 +289,7 @@ function cambiarVista(view) {
 
     if (view === 'productos') cargarProductos();
     if (view === 'reservas') cargarReservas();
+    if (view === 'historial') cargarHistorial();
     if (view === 'dashboard') cargarDashboard();
     if (view === 'inventario') {
         cargarInventario();
@@ -428,12 +432,28 @@ async function confirmarReserva() {
 // Reservas
 // =============================================================
 async function cargarReservas() {
-    skeletonReservas();
+    skeletonReservas('#reservas-lista');
     const params = new URLSearchParams();
+    // Reservas = activas (pendiente + confirmada). Si el usuario eligio una chip
+    // concreta, mandamos solo ese estado; si no, atajo ?activas=1.
     if (state.reservaFiltro) params.set('estado', state.reservaFiltro);
+    else params.set('activas', '1');
     try {
         const data = await api('/reservas?' + params);
-        renderReservas(data);
+        renderReservas(data, '#reservas-lista');
+    } catch (e) {
+        toast(e.message, 'error');
+    }
+}
+
+async function cargarHistorial() {
+    skeletonReservas('#historial-lista');
+    const params = new URLSearchParams();
+    if (state.historialFiltro) params.set('estado', state.historialFiltro);
+    else params.set('historico', '1');
+    try {
+        const data = await api('/reservas?' + params);
+        renderReservas(data, '#historial-lista');
     } catch (e) {
         toast(e.message, 'error');
     }
@@ -442,16 +462,21 @@ async function cargarReservas() {
 // Selección bulk de reservas — Set<id>. Se vacía al recargar la lista.
 const _resSel = { ids: new Set(), data: [] };
 
-function renderReservas(data) {
-    const cont = $('#reservas-lista');
+function renderReservas(data, selector = '#reservas-lista') {
+    const cont = $(selector);
+    if (!cont) return;
     cont.innerHTML = '';
     _resSel.data = data;
+    _resSel.selector = selector;
     // Filtra IDs huérfanos de la selección (estado ya cambiado o filtro distinto)
     const idsVisibles = new Set(data.map(r => r.id));
     for (const id of [..._resSel.ids]) if (!idsVisibles.has(id)) _resSel.ids.delete(id);
 
     if (!data.length) {
-        cont.append(el('p', { class: 'muted' }, 'No hay reservas con estos filtros.'));
+        const msg = selector === '#historial-lista'
+            ? 'No hay reservas en el historial con estos filtros.'
+            : 'No hay reservas con estos filtros.';
+        cont.append(el('p', { class: 'muted' }, msg));
         actualizarBarraSeleccion();
         return;
     }
@@ -472,7 +497,7 @@ function renderReservas(data) {
                 cb.onchange = () => {
                     if (cb.checked) seleccionables.forEach(r => _resSel.ids.add(r.id));
                     else seleccionables.forEach(r => _resSel.ids.delete(r.id));
-                    renderReservas(data);
+                    renderReservas(data, selector);
                 };
                 return cb;
             })(),
@@ -495,7 +520,7 @@ function renderReservas(data) {
                 else _resSel.ids.delete(r.id);
                 actualizarBarraSeleccion();
                 // Re-render sólo si el "seleccionar todas" debe cambiar
-                renderReservas(data);
+                renderReservas(data, selector);
             },
         });
         if (checked) checkbox.checked = true;
@@ -606,7 +631,7 @@ const _ACCION_LABEL = {
 async function accionBulk(accion) {
     if (accion === 'clear') {
         _resSel.ids.clear();
-        renderReservas(_resSel.data);
+        renderReservas(_resSel.data, _resSel.selector || '#reservas-lista');
         return;
     }
     const conf = _ACCION_LABEL[accion];
@@ -627,17 +652,24 @@ async function accionBulk(accion) {
         const tipo = r.fallidas === 0 ? 'ok' : r.aplicadas > 0 ? 'info' : 'error';
         toast(`Bulk: ${r.aplicadas} aplicada(s) · ${r.fallidas} fallo(s)`, tipo);
         _resSel.ids.clear();
-        cargarReservas();
+        refrescarVistaReservas();
     } catch (e) {
         toast(e.message, 'error');
     }
+}
+
+function refrescarVistaReservas() {
+    // Tras una acción que cambia estados: refresca la pestaña activa
+    // (los items pueden haber migrado entre reservas y historial).
+    if (state.view === 'historial') cargarHistorial();
+    else cargarReservas();
 }
 
 async function cambiarEstadoReserva(id, estado) {
     try {
         await api(`/reservas/${id}/estado`, { method: 'PATCH', body: JSON.stringify({ estado }) });
         toast(`Reserva ${estado}`, 'ok');
-        cargarReservas();
+        refrescarVistaReservas();
     } catch (e) {
         toast(e.message, 'error');
     }
@@ -761,7 +793,7 @@ async function cancelarReserva(id) {
     try {
         await api(`/reservas/${id}`, { method: 'DELETE' });
         toast('Reserva cancelada', 'ok');
-        cargarReservas();
+        refrescarVistaReservas();
     } catch (e) {
         toast(e.message, 'error');
     }
@@ -2117,15 +2149,24 @@ function bindEventos() {
         cargarProductos();
     };
 
-    // Reservas - filtros
-    $$('.chip-filters .chip').forEach(
-        c =>
-            (c.onclick = () => {
-                $$('.chip-filters .chip').forEach(x => x.classList.toggle('active', x === c));
-                state.reservaFiltro = c.dataset.estado;
-                cargarReservas();
-            })
-    );
+    // Filtros por chips (Reservas + Historial). Cada .chip-filters tiene data-grupo
+    // que decide a qué estado del state y a qué cargador llama.
+    $$('.chip-filters').forEach(grupo => {
+        const tipo = grupo.dataset.grupo; // 'reservas' | 'historial'
+        $$('.chip', grupo).forEach(
+            c =>
+                (c.onclick = () => {
+                    $$('.chip', grupo).forEach(x => x.classList.toggle('active', x === c));
+                    if (tipo === 'historial') {
+                        state.historialFiltro = c.dataset.estado;
+                        cargarHistorial();
+                    } else {
+                        state.reservaFiltro = c.dataset.estado;
+                        cargarReservas();
+                    }
+                })
+        );
+    });
 
     // Inventario
     $('#inv-buscar')?.addEventListener(

@@ -73,9 +73,15 @@ router.get('/', authRequired, async (req, res) => {
         where.push('r.usuario_id = ?');
         params.push(req.query.usuario_id);
     }
-    if (req.query.estado) {
-        where.push('r.estado = ?');
-        params.push(req.query.estado);
+    // estado puede ser un valor único o una lista separada por comas.
+    // Atajos: ?activas=1 -> pendiente+confirmada · ?historico=1 -> entregada+cancelada
+    let estados = null;
+    if (req.query.activas === '1') estados = ['pendiente', 'confirmada'];
+    else if (req.query.historico === '1') estados = ['entregada', 'cancelada'];
+    else if (req.query.estado) estados = String(req.query.estado).split(',').map(s => s.trim()).filter(Boolean);
+    if (estados && estados.length) {
+        where.push(`r.estado IN (${estados.map(() => '?').join(',')})`);
+        params.push(...estados);
     }
     const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
 

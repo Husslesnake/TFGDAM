@@ -86,9 +86,10 @@
     <nav class="tabs desktop-tabs">
         <button class="tab active" data-view="productos" title="Productos (1)"><span class="tab-icon">🛒</span><span>Productos</span></button>
         <button class="tab" data-view="reservas" title="Reservas (2)"><span class="tab-icon">📋</span><span>Reservas</span></button>
-        <button class="tab admin-only" data-view="dashboard" title="Dashboard (3)"><span class="tab-icon">📊</span><span>Dashboard</span></button>
-        <button class="tab admin-only" data-view="inventario" title="Inventario (4)"><span class="tab-icon">📦</span><span>Inventario</span></button>
-        <button class="tab admin-only" data-view="usuarios" title="Usuarios (5)"><span class="tab-icon">👥</span><span>Usuarios</span></button>
+        <button class="tab" data-view="historial" title="Historial (3)"><span class="tab-icon">🗂️</span><span>Historial</span></button>
+        <button class="tab admin-only" data-view="dashboard" title="Dashboard (4)"><span class="tab-icon">📊</span><span>Dashboard</span></button>
+        <button class="tab admin-only" data-view="inventario" title="Inventario (5)"><span class="tab-icon">📦</span><span>Inventario</span></button>
+        <button class="tab admin-only" data-view="usuarios" title="Usuarios (6)"><span class="tab-icon">👥</span><span>Usuarios</span></button>
     </nav>
 
     <div class="topbar-actions">
@@ -144,19 +145,30 @@
         </div>
     </section>
 
-    <!-- ===== Reservas ===== -->
+    <!-- ===== Reservas activas (pendientes + confirmadas) ===== -->
     <section id="view-reservas" class="view">
         <div class="view-header">
             <h2>Reservas</h2>
-            <div class="chip-filters">
+            <div class="chip-filters" data-grupo="reservas">
                 <button class="chip active" data-estado="">Todas</button>
                 <button class="chip" data-estado="pendiente">Pendientes</button>
                 <button class="chip" data-estado="confirmada">Confirmadas</button>
+            </div>
+        </div>
+        <div id="reservas-lista" class="reservas-lista"></div>
+    </section>
+
+    <!-- ===== Historial (entregadas + canceladas) ===== -->
+    <section id="view-historial" class="view">
+        <div class="view-header">
+            <h2>Historial</h2>
+            <div class="chip-filters" data-grupo="historial">
+                <button class="chip active" data-estado="">Todas</button>
                 <button class="chip" data-estado="entregada">Entregadas</button>
                 <button class="chip" data-estado="cancelada">Canceladas</button>
             </div>
         </div>
-        <div id="reservas-lista" class="reservas-lista"></div>
+        <div id="historial-lista" class="reservas-lista"></div>
     </section>
 
     <!-- ===== Dashboard (admin) ===== -->
@@ -244,6 +256,7 @@
 <nav class="bottom-nav">
     <button class="bn active" data-view="productos"><span>🛒</span><small>Productos</small></button>
     <button class="bn" data-view="reservas"><span>📋</span><small>Reservas</small></button>
+    <button class="bn" data-view="historial"><span>🗂️</span><small>Historial</small></button>
     <button class="bn admin-only" data-view="dashboard"><span>📊</span><small>Dashboard</small></button>
     <button class="bn admin-only" data-view="inventario"><span>📦</span><small>Inventario</small></button>
     <button class="bn admin-only" data-view="usuarios"><span>👥</span><small>Usuarios</small></button>
