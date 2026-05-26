@@ -18,8 +18,10 @@ const morgan = require('morgan');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
+const swaggerUi = require('swagger-ui-express');
 
 const pool = require('./src/db');
+const swaggerSpec = require('./src/swagger');
 
 const app = express();
 
@@ -28,6 +30,8 @@ const app = express();
 app.set('trust proxy', 1);
 
 // ---------- Middlewares globales ----------
+// Swagger UI necesita inline scripts/styles, por eso desactivamos CSP solo en /api/docs
+app.use('/api/docs', helmet({ contentSecurityPolicy: false }));
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(compression());
 // CORS: en producción aceptamos un origen explícito vía CORS_ORIGIN
@@ -57,6 +61,14 @@ app.use(express.static(path.join(__dirname, '..', 'frontend')));
 
 // ---------- Descargas (APK Android, etc.) ----------
 app.use('/downloads', express.static(path.join(__dirname, '..', 'downloads')));
+
+// ---------- Swagger UI ----------
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    customSiteTitle: 'Stockly API Docs',
+    swaggerOptions: { persistAuthorization: true },
+}));
+// Spec en JSON para clientes externos (Postman, etc.)
+app.get('/api/docs.json', (_req, res) => res.json(swaggerSpec));
 
 // ---------- Rutas ----------
 app.get('/api/health', async (_req, res) => {
