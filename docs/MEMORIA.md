@@ -645,16 +645,16 @@ Pruebas manuales: instalación PWA en Chrome desktop y Android; comportamiento o
 
 | ID    | Caso                                                  | Esperado                                            | Estado |
 |-------|-------------------------------------------------------|-----------------------------------------------------|--------|
-| TC-01 | Login credenciales válidas                            | JWT devuelto, vista cargada                          | ✅      |
-| TC-02 | Login contraseña incorrecta                           | 401                                                  | ✅      |
-| TC-03 | Registro email duplicado                              | 409                                                  | ✅      |
-| TC-04 | Reserva con stock suficiente                          | 201, reserva pendiente, movimiento creado            | ✅      |
-| TC-05 | Reserva con stock insuficiente                        | 409                                                  | ✅      |
-| TC-06 | **Dos reservas concurrentes**, stock 1                | Una 201, otra 409; sin sobreventa                    | ✅      |
-| TC-07 | Cliente DELETE /api/productos/:id                     | 403                                                  | ✅      |
-| TC-08 | Operario entrega reserva                              | Estado `entregada`, stock descontado, mov. `salida`  | ✅      |
-| TC-09 | Token expirado                                        | 401                                                  | ✅      |
-| TC-10 | Rate limit /api/auth                                  | 429 tras 30 intentos                                 | ✅      |
+| TC-01 | Login credenciales válidas                            | JWT devuelto, vista cargada                          | OK      |
+| TC-02 | Login contraseña incorrecta                           | 401                                                  | OK      |
+| TC-03 | Registro email duplicado                              | 409                                                  | OK      |
+| TC-04 | Reserva con stock suficiente                          | 201, reserva pendiente, movimiento creado            | OK      |
+| TC-05 | Reserva con stock insuficiente                        | 409                                                  | OK      |
+| TC-06 | **Dos reservas concurrentes**, stock 1                | Una 201, otra 409; sin sobreventa                    | OK      |
+| TC-07 | Cliente DELETE /api/productos/:id                     | 403                                                  | OK      |
+| TC-08 | Operario entrega reserva                              | Estado `entregada`, stock descontado, mov. `salida`  | OK      |
+| TC-09 | Token expirado                                        | 401                                                  | OK      |
+| TC-10 | Rate limit /api/auth                                  | 429 tras 30 intentos                                 | OK      |
 
 ## 10.3 Resultados obtenidos
 
