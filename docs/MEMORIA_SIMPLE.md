@@ -627,26 +627,19 @@ Durante el desarrollo hemos utilizado tres herramientas de inteligencia artifici
 
 ## 9.2 Uso realizado
 
-Usamos la IA como un compañero de programación, no como un sustituto. La diferencia es importante: el compañero propone, nosotros decidimos.
+Trabajamos con la IA como si fuera un asesor: le planteábamos un problema, ella nos ofrecía opciones y argumentos, y nosotros tomábamos la decisión, manteniendo en cada momento la dirección del proyecto.
 
-- **Para escribir código:** la IA generó borradores iniciales de las rutas del servidor, las validaciones y la capa de red de la app Android. Todos fueron revisados, probados y adaptados antes de incluirlos en el proyecto.
-- **Para el diseño visual:** cuando el sistema de diseño de la segunda versión resultó demasiado recargado, usamos la IA para explorar alternativas más limpias hasta llegar a la versión actual.
-- **Para la documentación:** la IA ayudó a redactar el borrador inicial de esta memoria, el README del proyecto y el registro de cambios. Todo fue revisado y corregido manualmente.
-- **Para resolver errores:** cuando la aplicación tenía comportamientos extraños (el Service Worker que no se actualizaba, los problemas de concurrencia en las reservas, la configuración de MySQL en diferentes máquinas), la IA ayudó a diagnosticar las causas.
-- **Para la base de datos:** el esquema inicial de las tablas y los índices se diseñaron con ayuda de la IA, y luego se validaron con datos reales.
-- **Para las pruebas:** la IA generó la estructura inicial de los tests; los casos límite más interesantes (concurrencia, comprobación de permisos) los ampliamos nosotros manualmente.
+- **Para las decisiones técnicas:** cuando había que elegir entre varias formas de resolver algo (por ejemplo, cómo guardar sesiones o cómo estructurar la base de datos), la IA explicaba las alternativas y sus consecuencias. La elección final, con su justificación, era nuestra.
+- **Para escribir código:** la IA proponía una solución; nosotros la leíamos, evaluábamos si tenía sentido dentro del proyecto y la incorporábamos, modificábamos o descartábamos. Nada entró en el proyecto sin que lo entendiéramos primero.
+- **Para el diseño visual:** cuando algo no nos convencía estéticamente, pedíamos a la IA que argumentara alternativas. Nosotros decidíamos qué dirección tomar y supervisábamos cada cambio.
+- **Para resolver errores:** la IA sugería posibles causas; nosotros las comprobábamos una a una hasta encontrar la real.
+- **Para la documentación:** la IA proponía borradores; los autores los reescribían para que reflejaran con exactitud lo que habíamos hecho y por qué.
 
 ## 9.3 Validación y revisión
 
-Cada vez que la IA generaba algo, lo hacíamos pasar por tres filtros antes de usarlo:
+La regla que seguimos siempre fue: si no lo entiendo, no lo uso. Antes de incorporar cualquier sugerencia nos preguntábamos si seríamos capaces de explicarla en una defensa. Si la respuesta era no, se descartaba o se rediseñaba hasta que lo fuera.
 
-1. **Lectura crítica:** ¿tiene sentido lo que propone? ¿encaja con el resto del proyecto?
-2. **Pruebas locales:** ejecutar el código y comprobar que funciona en los casos normales y en los casos límite.
-3. **Ajuste de estilo:** el código generado por IA tiende a ser más formal o a usar convenciones distintas a las del resto del proyecto, así que siempre hay que homogeneizarlo.
-
-La IA también tiene limitaciones que aprendimos a gestionar: a veces propone soluciones innecesariamente complejas, a veces usa versiones antiguas de librerías, y pierde el contexto del proyecto en conversaciones largas.
-
-**Conclusión:** la IA fue una herramienta muy útil para acelerar las partes más repetitivas del desarrollo, pero la responsabilidad sobre las decisiones de diseño y la calidad del código final es nuestra.
+La IA también tiene sus límites: a veces propone soluciones más complicadas de lo necesario, a veces usa versiones antiguas de librerías y puede perder el hilo en conversaciones largas. Lo gestionamos manteniendo un documento de contexto del proyecto que le pasábamos al inicio de cada sesión.
 
 ---
 
