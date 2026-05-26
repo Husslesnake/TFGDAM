@@ -351,7 +351,16 @@ Cada router declara explícitamente el nivel de auth necesario, p. ej. `router.d
 
 ## 4.9 Swagger / OpenAPI
 
-La API no dispone actualmente de documentación OpenAPI 3 / Swagger. Todas las rutas, métodos, parámetros y respuestas están descritos en la tabla de §4.4 y en los tests automatizados de §4.10. La integración de `swagger-ui-express` con un esquema OpenAPI 3 generado a partir de JSDoc está planificada como mejora futura.
+La API expone documentación interactiva **OpenAPI 3.0** mediante `swagger-ui-express`, accesible en `/api/docs`. La especificación completa está centralizada en `backend/src/swagger.js` como un objeto JavaScript (sin JSDoc disperso en los routers), lo que facilita su mantenimiento.
+
+```
+GET  /api/docs       → Swagger UI interactivo (HTML)
+GET  /api/docs.json  → Especificación OpenAPI 3.0 (JSON, importable en Postman)
+```
+
+La documentación cubre los **29 endpoints** de la API agrupados en seis etiquetas: _Autenticación_, _Categorías_, _Productos_, _Reservas_, _Admin_ y _Sistema_. Para cada endpoint se detallan parámetros de ruta y query, esquema del body, posibles respuestas y el rol requerido. El botón **Authorize** permite introducir el token JWT obtenido en `/api/auth/login` y probar directamente cualquier endpoint protegido sin herramientas externas.
+
+Se definen además esquemas reutilizables en `components/schemas` (`Producto`, `Reserva`, `Usuario`, `Movimiento`, etc.) referenciados mediante `$ref` para evitar duplicación.
 
 ## 4.10 Pruebas de endpoints
 
@@ -687,7 +696,7 @@ Aplicación web funcional instalable como PWA, catálogo de 500 productos, gesti
 
 ## 11.3 Mejoras futuras
 
-Detalladas en [ROADMAP](docs/ROADMAP.md). Lo más relevante: mejoras sobre la app Android existente (BiometricPrompt para desbloquear sesión guardada, Room + cola offline para operar sin red, escáner de código de barras con CameraX + ML Kit), Swagger/OpenAPI, validación con Zod, accesibilidad WCAG AA completa, workflow CI/CD formal en GitHub Actions, subida de imágenes de producto, notificaciones push (FCM), recuperación de contraseña por email y multi-almacén.
+Detalladas en [ROADMAP](docs/ROADMAP.md). Lo más relevante: mejoras sobre la app Android existente (BiometricPrompt para desbloquear sesión guardada, Room + cola offline para operar sin red, escáner de código de barras con CameraX + ML Kit), validación con Zod, accesibilidad WCAG AA completa, workflow CI/CD formal en GitHub Actions, subida de imágenes de producto, notificaciones push (FCM), recuperación de contraseña por email y multi-almacén.
 
 ## 11.4 Valoración personal
 
@@ -727,7 +736,7 @@ Manual detallado con capturas paso a paso pendiente en `docs/manual-usuario.md`.
 
 - **GitHub:** https://github.com/husslesnake/TFGDAM
 - **Aplicación desplegada:** https://tfgdam-production.up.railway.app/
-- **Swagger / OpenAPI:** pendiente.
+- **Swagger UI:** https://tfgdam-production.up.railway.app/api/docs
 - **Vídeo demostración:** pendiente de grabar — flujo completo: login → reserva → confirmar → entregar → incidencia.
 
 ## Anexo D — Fragmentos de código relevantes

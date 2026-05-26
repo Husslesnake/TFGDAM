@@ -394,7 +394,11 @@ El token caduca a las 8 horas, por lo que el usuario tendrá que volver a inicia
 
 ## 4.9 Swagger / OpenAPI
 
-La documentación interactiva de la API (que permitiría probar cada endpoint desde el navegador) no está implementada actualmente. Todas las rutas disponibles están descritas en la tabla del apartado 4.4 y en las pruebas automáticas del apartado 4.10. La implementación de Swagger está planificada como mejora futura.
+Hemos añadido una página de documentación interactiva de la API accesible en `/api/docs`. Cualquier persona que quiera integrarse con Stockly (o simplemente entender qué hace cada dirección del servidor) puede abrirla en el navegador, ver todos los parámetros posibles y probar las peticiones directamente sin necesidad de instalar ninguna herramienta externa.
+
+La página incluye los **29 endpoints** disponibles organizados por módulos (autenticación, productos, reservas, etc.). Para los endpoints que requieren haber iniciado sesión, basta con pegar el token obtenido al hacer login y el formulario se encarga del resto.
+
+Adicionalmente, la especificación completa en formato JSON está disponible en `/api/docs.json`, lo que permite importarla directamente en herramientas como Postman.
 
 ## 4.10 Pruebas de endpoints
 
@@ -712,7 +716,6 @@ Los retos más importantes que tuvimos que superar:
 Las principales líneas de mejora identificadas para versiones futuras:
 
 - **App Android mejorada:** autenticación biométrica (huella dactilar), funcionamiento sin conexión y escáner de códigos de barras.
-- **Documentación de la API:** implementar una interfaz interactiva que permita explorar y probar los endpoints del servidor desde el navegador.
 - **Accesibilidad completa:** cumplir el estándar WCAG AA en todos los elementos de la interfaz.
 - **Automatización de pruebas en GitHub:** ejecutar los tests automáticamente en cada subida de código, no solo en local.
 - **Funcionalidades adicionales:** subida de imágenes de productos, notificaciones push, recuperación de contraseña por email y soporte para múltiples almacenes.
@@ -795,7 +798,7 @@ Manual detallado con capturas paso a paso disponible en `docs/manual-usuario.md`
 
 - **Código fuente en GitHub:** https://github.com/husslesnake/TFGDAM
 - **Aplicación web en producción:** https://tfgdam-production.up.railway.app/
-- **Swagger / OpenAPI:** pendiente de implementar.
+- **Documentación interactiva (Swagger UI):** https://tfgdam-production.up.railway.app/api/docs
 - **Vídeo demostración:** pendiente de grabar — flujo completo: login → reserva → confirmar → entregar → incidencia.
 
 ## Anexo D — Fragmentos de código relevantes
