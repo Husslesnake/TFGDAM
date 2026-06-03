@@ -4,6 +4,7 @@ const path = require('path');
 const PptxGenJS = require('pptxgenjs');
 
 const OUT = path.join(__dirname, '..', 'docs', 'defensa-stockly.pptx');
+const SHOTS = path.join(__dirname, '..', 'docs', 'screenshots', 'app');
 
 // Paleta
 const NAVY = '1E2761';
@@ -94,6 +95,50 @@ function codeBlock(slide, code, opts = {}) {
         x: x + 0.2, y: y + 0.15, w: w - 0.4, h: h - 0.3,
         fontSize: opts.fontSize ?? 13, fontFace: MONO, color: CODE_FG,
         valign: 'top',
+    });
+}
+
+// Galería de capturas: rejilla de imágenes (todas 1280x800, ratio 1.6) con pie.
+function gallery(kickerText, titleText, items, cols) {
+    const s = pptx.addSlide({ masterName: 'CONTENT' });
+    kicker(s, kickerText);
+    title(s, titleText);
+
+    const RATIO = 1280 / 800; // 1.6
+    const rows = Math.ceil(items.length / cols);
+    const topY = 1.45;
+    const botY = SH - 0.55;
+    const gap = 0.3;
+    const capH = 0.34;
+
+    const availH = botY - topY;
+    const cellH = (availH - gap * (rows - 1)) / rows; // imagen + pie
+    let imgH = cellH - capH;
+    let imgW = imgH * RATIO;
+
+    // No desbordar a lo ancho
+    const maxRowW = SW - 1.0;
+    const maxImgW = (maxRowW - gap * (cols - 1)) / cols;
+    if (imgW > maxImgW) { imgW = maxImgW; imgH = imgW / RATIO; }
+
+    const totalW = cols * imgW + (cols - 1) * gap;
+    const startX = (SW - totalW) / 2;
+
+    items.forEach((it, i) => {
+        const c = i % cols;
+        const r = Math.floor(i / cols);
+        const x = startX + c * (imgW + gap);
+        const y = topY + r * (imgH + capH + gap);
+        // Marco
+        s.addShape(pptx.ShapeType.rect, {
+            x: x - 0.05, y: y - 0.05, w: imgW + 0.1, h: imgH + 0.1,
+            fill: { color: PANEL }, line: { color: RULE, width: 1 },
+        });
+        s.addImage({ path: path.join(SHOTS, it.file), x, y, w: imgW, h: imgH });
+        s.addText(it.cap, {
+            x, y: y + imgH + 0.04, w: imgW, h: capH,
+            fontSize: 11, bold: true, fontFace: BODY, color: NAVY, align: 'center',
+        });
     });
 }
 
@@ -426,6 +471,24 @@ await conn.commit();`;
         s.addText(row[1], { x: px + 0.25, y: y + 0.3, w: pw - 1.4, h: 0.3, fontSize: 11, color: MUTED, fontFace: BODY });
     });
 }
+
+// ---------- (10b) Capturas web · cliente y catálogo ----------
+gallery('CAPTURAS · APLICACIÓN WEB', 'La web en uso · cliente, operario y dashboard', [
+    { file: '01-login.png', cap: 'Login con JWT' },
+    { file: '02-catalogo.png', cap: 'Catálogo · búsqueda y filtros' },
+    { file: '03-detalle-producto.png', cap: 'Detalle + reserva' },
+    { file: '04-mis-reservas.png', cap: 'Mis reservas (cliente)' },
+    { file: '05-cola-reservas.png', cap: 'Cola de reservas (operario)' },
+    { file: '06-dashboard.png', cap: 'Dashboard de KPIs (admin)' },
+], 3);
+
+// ---------- (10c) Capturas web · administración y PWA ----------
+gallery('CAPTURAS · APLICACIÓN WEB', 'Administración, modo oscuro e instalación', [
+    { file: '07-inventario.png', cap: 'Inventario · alerta de stock bajo' },
+    { file: '08-usuarios.png', cap: 'Gestión de usuarios (admin)' },
+    { file: '09-modo-oscuro.png', cap: 'Modo oscuro' },
+    { file: '10-boton-apk.png', cap: 'Descarga del APK Android' },
+], 2);
 
 // ---------- (11) App Android ----------
 {

@@ -145,7 +145,7 @@ const portada = [
     new Paragraph({
         spacing: { after: 60 },
         alignment: AlignmentType.CENTER,
-        children: [new TextRun({ text: 'Slides asociadas: defensa-stockly.pptx (15 diapositivas + cierre)', color: MUTED, size: 18, font: FONT })],
+        children: [new TextRun({ text: 'Slides asociadas: defensa-stockly.pptx (17 diapositivas + cierre)', color: MUTED, size: 18, font: FONT })],
     }),
     new Paragraph({ children: [], pageBreakBefore: true }),
 ];
@@ -259,7 +259,7 @@ const slide9 = [
 
 const slide10 = [
     ...slideHeader(10, 'Frontend PWA', '35 s'),
-    stage('Mostrar capturas.'),
+    stage('Anticipar que las capturas reales vienen en las dos diapositivas siguientes.'),
     runs([
         { text: 'El frontend es una ' },
         { text: 'SPA en JavaScript vanilla ', bold: true },
@@ -269,8 +269,42 @@ const slide10 = [
     ]),
 ];
 
+const slide10b = [
+    ...slideHeader(11, 'Capturas web — cliente y catálogo', '25 s'),
+    stage('Recorrer las seis capturas de un vistazo.'),
+    runs([
+        { text: 'Aquí se ve la aplicación real en uso. De izquierda a derecha: el ' },
+        { text: 'login con JWT, ', bold: true },
+        { text: 'el ' },
+        { text: 'catálogo con búsqueda y filtros, ', bold: true },
+        { text: 'el detalle de un producto con su modal de reserva, la vista de ' },
+        { text: '"mis reservas" ', bold: true },
+        { text: 'del cliente, la ' },
+        { text: 'cola de reservas ', bold: true },
+        { text: 'que ve el operario, y el ' },
+        { text: 'dashboard de KPIs ', bold: true },
+        { text: 'del administrador.' },
+    ]),
+];
+
+const slide10c = [
+    ...slideHeader(12, 'Capturas web — administración y PWA', '20 s'),
+    stage('Cuatro capturas: gestión y experiencia.'),
+    runs([
+        { text: 'Y estas cuatro cierran la parte web: el ' },
+        { text: 'inventario ', bold: true },
+        { text: 'con la alerta de stock bajo resaltada, la ' },
+        { text: 'gestión de usuarios ', bold: true },
+        { text: 'del administrador, el ' },
+        { text: 'modo oscuro, ', bold: true },
+        { text: 'y la pantalla de ' },
+        { text: 'descarga del APK Android ', bold: true },
+        { text: 'directamente desde la web. Todo esto está accesible en producción ahora mismo.' },
+    ]),
+];
+
 const slide11 = [
-    ...slideHeader(11, 'App Android nativa', '40 s'),
+    ...slideHeader(13, 'App Android nativa', '40 s'),
     runs([
         { text: 'La app Android está pensada ' },
         { text: 'específicamente para el operario de almacén. ', bold: true },
@@ -284,7 +318,7 @@ const slide11 = [
 ];
 
 const slide12 = [
-    ...slideHeader(12, 'Despliegue', '30 s'),
+    ...slideHeader(14, 'Despliegue', '30 s'),
     runs([
         { text: 'El sistema está en producción en ' },
         { text: 'Railway: ', bold: true },
@@ -294,7 +328,7 @@ const slide12 = [
 ];
 
 const slide13 = [
-    ...slideHeader(13, 'Pruebas y resultados', '40 s'),
+    ...slideHeader(15, 'Pruebas y resultados', '40 s'),
     runs([
         { text: 'Tests automatizados con ' },
         { text: 'Vitest + Supertest ', bold: true },
@@ -312,7 +346,7 @@ const slide13 = [
 ];
 
 const slide14 = [
-    ...slideHeader(14, 'Demo en vivo', '2 — 3 min'),
+    ...slideHeader(16, 'Demo en vivo', '2 — 3 min'),
     stage('Demo guiada, en este orden:'),
     new Paragraph({
         numbering: { reference: 'numbers', level: 0 }, spacing: { after: 80, line: 280 },
@@ -349,7 +383,7 @@ const slide14 = [
 ];
 
 const slide15 = [
-    ...slideHeader(15, 'Conclusiones', '40 s'),
+    ...slideHeader(17, 'Conclusiones', '40 s'),
     p('Stockly cumple los objetivos planteados: API REST con JWT y control por roles, reservas concurrentes consistentes, PWA instalable, app Android nativa funcional, y despliegue cloud público. El proyecto integra prácticamente todos los contenidos del ciclo: modelado de datos, API REST, autenticación, frontend, control de concurrencia, PWA, despliegue, pruebas y Android nativo.'),
     p('Como mejoras futuras planteamos: documentación OpenAPI/Swagger, validación centralizada con Zod, escáner de código de barras en la app Android, cola offline con Room, y biometría antes de exponer la sesión.'),
     p('Muchas gracias por su atención. Quedamos a disposición para las preguntas que quieran plantearnos.'),
@@ -429,6 +463,7 @@ const children = [
     ...convenciones,
     ...slide1, ...slide2, ...slide3, ...slide4, ...slide5,
     ...slide6, ...slide7, ...slide8, ...slide9, ...slide10,
+    ...slide10b, ...slide10c,
     ...slide11, ...slide12, ...slide13, ...slide14, ...slide15,
     ...anexo,
 ];
