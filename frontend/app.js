@@ -430,6 +430,23 @@ async function confirmarReserva() {
     }
 }
 
+function mostrarDetalleReserva(r) {
+    $('#modal-titulo').textContent = `Detalles reserva #${r.id}`;
+    $('#modal-body').innerHTML = `
+        <section class="alb-bloque">
+            <table>
+                <tr><th>Producto</th><td>${esc(r.producto)}</td></tr>
+                <tr><th>Cantidad</th><td>${r.cantidad}</td></tr>
+                <tr><th>Recogida prevista</th><td>${esc(r.fecha_recogida || '—')}</td></tr>
+                <tr><th>Comentario</th><td>${r.notas ? esc(r.notas) : '<span class="muted">Sin comentario</span>'}</td></tr>
+            </table>
+        </section>
+    `;
+    $('#modal-foot').innerHTML = `<button class="btn btn-primary" id="m-ok">Cerrar</button>`;
+    $('#m-ok').onclick = cerrarModal;
+    abrirModal();
+}
+
 // =============================================================
 // Reservas
 // =============================================================
@@ -545,6 +562,17 @@ function renderReservas(data, selector = '#reservas-lista') {
                     onclick: () => imprimirAlbaran(r),
                 },
                 '🖨'
+            )
+        );
+        acciones.append(
+            el(
+                'button',
+                {
+                    class: 'btn btn-ghost btn-mini',
+                    title: 'Ver detalles de la reserva',
+                    onclick: () => mostrarDetalleReserva(r),
+                },
+                'Detalles'
             )
         );
         if (staff && r.estado === 'pendiente')
